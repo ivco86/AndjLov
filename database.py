@@ -137,6 +137,41 @@ class Database:
             )
         """)
 
+        # Workflow pipelines table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pipelines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                trigger_type TEXT NOT NULL,
+                trigger_config TEXT,
+                actions TEXT NOT NULL,
+                enabled BOOLEAN DEFAULT 1,
+                last_run TIMESTAMP,
+                run_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Pipeline execution logs
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pipeline_executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pipeline_id INTEGER NOT NULL,
+                trigger_source TEXT,
+                status TEXT NOT NULL,
+                total_actions INTEGER DEFAULT 0,
+                completed_actions INTEGER DEFAULT 0,
+                failed_actions INTEGER DEFAULT 0,
+                execution_log TEXT,
+                error_message TEXT,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
+            )
+        """)
+
         # Create indexes for performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_filepath ON images(filepath)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(is_favorite)")
@@ -151,6 +186,10 @@ class Database:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_board_images_image ON board_images(image_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_annotations_image ON annotations(image_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_annotations_class ON annotations(class_name)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_pipelines_enabled ON pipelines(enabled)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_pipelines_trigger_type ON pipelines(trigger_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_pipeline_executions_pipeline ON pipeline_executions(pipeline_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_pipeline_executions_status ON pipeline_executions(status)")
         
         # Full-text search index - check if needs migration
         cursor.execute("""
@@ -1706,3 +1745,286 @@ class Database:
         cursor.execute("DELETE FROM dataset_classes WHERE id = ?", (class_id,))
         conn.commit()
         conn.close()
+
+    # ============ WORKFLOW PIPELINE OPERATIONS ============
+
+    def create_pipeline(self, name: str, description: str, trigger_type: str,
+                       trigger_config: Dict, actions: List[Dict], enabled: bool = True) -> int:
+        """Create a new workflow pipeline"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO pipelines (name, description, trigger_type, trigger_config, actions, enabled)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, description, trigger_type, json.dumps(trigger_config), json.dumps(actions), enabled))
+
+        pipeline_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        return pipeline_id
+
+    def get_pipeline(self, pipeline_id: int) -> Optional[Dict]:
+        """Get pipeline by ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, name, description, trigger_type, trigger_config, actions, enabled,
+                   last_run, run_count, created_at, updated_at
+            FROM pipelines
+            WHERE id = ?
+        """, (pipeline_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            pipeline = dict(row)
+            pipeline['trigger_config'] = json.loads(pipeline['trigger_config']) if pipeline['trigger_config'] else {}
+            pipeline['actions'] = json.loads(pipeline['actions']) if pipeline['actions'] else []
+            return pipeline
+
+        return None
+
+    def get_all_pipelines(self, enabled_only: bool = False) -> List[Dict]:
+        """Get all pipelines"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        if enabled_only:
+            cursor.execute("""
+                SELECT id, name, description, trigger_type, trigger_config, actions, enabled,
+                       last_run, run_count, created_at, updated_at
+                FROM pipelines
+                WHERE enabled = 1
+                ORDER BY created_at DESC
+            """)
+        else:
+            cursor.execute("""
+                SELECT id, name, description, trigger_type, trigger_config, actions, enabled,
+                       last_run, run_count, created_at, updated_at
+                FROM pipelines
+                ORDER BY created_at DESC
+            """)
+
+        pipelines = []
+        for row in cursor.fetchall():
+            pipeline = dict(row)
+            pipeline['trigger_config'] = json.loads(pipeline['trigger_config']) if pipeline['trigger_config'] else {}
+            pipeline['actions'] = json.loads(pipeline['actions']) if pipeline['actions'] else []
+            pipelines.append(pipeline)
+
+        conn.close()
+        return pipelines
+
+    def update_pipeline(self, pipeline_id: int, name: str = None, description: str = None,
+                       trigger_type: str = None, trigger_config: Dict = None,
+                       actions: List[Dict] = None, enabled: bool = None):
+        """Update a pipeline"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if name is not None:
+            updates.append("name = ?")
+            params.append(name)
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+        if trigger_type is not None:
+            updates.append("trigger_type = ?")
+            params.append(trigger_type)
+        if trigger_config is not None:
+            updates.append("trigger_config = ?")
+            params.append(json.dumps(trigger_config))
+        if actions is not None:
+            updates.append("actions = ?")
+            params.append(json.dumps(actions))
+        if enabled is not None:
+            updates.append("enabled = ?")
+            params.append(enabled)
+
+        if updates:
+            updates.append("updated_at = ?")
+            params.append(datetime.now())
+            params.append(pipeline_id)
+
+            query = f"UPDATE pipelines SET {', '.join(updates)} WHERE id = ?"
+            cursor.execute(query, params)
+            conn.commit()
+
+        conn.close()
+
+    def delete_pipeline(self, pipeline_id: int):
+        """Delete a pipeline"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM pipelines WHERE id = ?", (pipeline_id,))
+        conn.commit()
+        conn.close()
+
+    def update_pipeline_stats(self, pipeline_id: int):
+        """Update pipeline last_run and run_count"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE pipelines
+            SET last_run = ?, run_count = run_count + 1
+            WHERE id = ?
+        """, (datetime.now(), pipeline_id))
+
+        conn.commit()
+        conn.close()
+
+    def get_pipelines_by_trigger(self, trigger_type: str) -> List[Dict]:
+        """Get all enabled pipelines for a specific trigger type"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, name, description, trigger_type, trigger_config, actions, enabled,
+                   last_run, run_count, created_at, updated_at
+            FROM pipelines
+            WHERE trigger_type = ? AND enabled = 1
+            ORDER BY created_at DESC
+        """, (trigger_type,))
+
+        pipelines = []
+        for row in cursor.fetchall():
+            pipeline = dict(row)
+            pipeline['trigger_config'] = json.loads(pipeline['trigger_config']) if pipeline['trigger_config'] else {}
+            pipeline['actions'] = json.loads(pipeline['actions']) if pipeline['actions'] else []
+            pipelines.append(pipeline)
+
+        conn.close()
+        return pipelines
+
+    # ============ PIPELINE EXECUTION LOGS ============
+
+    def create_execution_log(self, pipeline_id: int, trigger_source: str = None) -> int:
+        """Create a new execution log entry"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO pipeline_executions (pipeline_id, trigger_source, status, execution_log)
+            VALUES (?, ?, 'running', '[]')
+        """, (pipeline_id, trigger_source))
+
+        execution_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        return execution_id
+
+    def update_execution_log(self, execution_id: int, status: str = None,
+                            total_actions: int = None, completed_actions: int = None,
+                            failed_actions: int = None, execution_log: List[Dict] = None,
+                            error_message: str = None):
+        """Update execution log"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if status is not None:
+            updates.append("status = ?")
+            params.append(status)
+
+            # Set completed_at if status is completed or failed
+            if status in ['completed', 'failed']:
+                updates.append("completed_at = ?")
+                params.append(datetime.now())
+
+        if total_actions is not None:
+            updates.append("total_actions = ?")
+            params.append(total_actions)
+        if completed_actions is not None:
+            updates.append("completed_actions = ?")
+            params.append(completed_actions)
+        if failed_actions is not None:
+            updates.append("failed_actions = ?")
+            params.append(failed_actions)
+        if execution_log is not None:
+            updates.append("execution_log = ?")
+            params.append(json.dumps(execution_log))
+        if error_message is not None:
+            updates.append("error_message = ?")
+            params.append(error_message)
+
+        if updates:
+            params.append(execution_id)
+            query = f"UPDATE pipeline_executions SET {', '.join(updates)} WHERE id = ?"
+            cursor.execute(query, params)
+            conn.commit()
+
+        conn.close()
+
+    def get_execution_log(self, execution_id: int) -> Optional[Dict]:
+        """Get execution log by ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM pipeline_executions WHERE id = ?
+        """, (execution_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            log = dict(row)
+            log['execution_log'] = json.loads(log['execution_log']) if log['execution_log'] else []
+            return log
+
+        return None
+
+    def get_pipeline_execution_history(self, pipeline_id: int, limit: int = 50) -> List[Dict]:
+        """Get execution history for a pipeline"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM pipeline_executions
+            WHERE pipeline_id = ?
+            ORDER BY started_at DESC
+            LIMIT ?
+        """, (pipeline_id, limit))
+
+        logs = []
+        for row in cursor.fetchall():
+            log = dict(row)
+            log['execution_log'] = json.loads(log['execution_log']) if log['execution_log'] else []
+            logs.append(log)
+
+        conn.close()
+        return logs
+
+    def get_recent_executions(self, limit: int = 100) -> List[Dict]:
+        """Get recent pipeline executions across all pipelines"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT pe.*, p.name as pipeline_name
+            FROM pipeline_executions pe
+            JOIN pipelines p ON pe.pipeline_id = p.id
+            ORDER BY pe.started_at DESC
+            LIMIT ?
+        """, (limit,))
+
+        logs = []
+        for row in cursor.fetchall():
+            log = dict(row)
+            log['execution_log'] = json.loads(log['execution_log']) if log['execution_log'] else []
+            logs.append(log)
+
+        conn.close()
+        return logs

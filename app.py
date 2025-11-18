@@ -30,6 +30,7 @@ from database import Database
 from ai_service import AIService
 from privacy_service import get_privacy_service
 from research_service import get_research_service
+from pipeline_service import get_pipeline_service
 
 # Security helper function
 def is_safe_path(filepath, base_dir):
@@ -193,6 +194,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 db = Database(DATABASE_PATH)
 ai = AIService(LM_STUDIO_URL)
 research = get_research_service(db)
+pipeline = get_pipeline_service(db, ai, get_privacy_service(), research)
 
 # Telegram Bot Management
 telegram_bot_process = None
@@ -2069,6 +2071,210 @@ def import_annotations_from_privacy():
 
     except Exception as e:
         print(f"Error importing from privacy: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ============ WORKFLOW AUTOMATION ENDPOINTS ============
+
+@app.route('/api/pipelines', methods=['GET'])
+def get_pipelines():
+    """Get all pipelines"""
+    try:
+        enabled_only = request.args.get('enabled_only', 'false').lower() == 'true'
+        pipelines = db.get_all_pipelines(enabled_only=enabled_only)
+
+        return jsonify({
+            'success': True,
+            'pipelines': pipelines,
+            'count': len(pipelines)
+        })
+    except Exception as e:
+        print(f"Error getting pipelines: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pipelines', methods=['POST'])
+def create_pipeline():
+    """Create a new pipeline"""
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        description = data.get('description', '')
+        trigger_type = data.get('trigger_type')
+        trigger_config = data.get('trigger_config', {})
+        actions = data.get('actions', [])
+        enabled = data.get('enabled', True)
+
+        if not name or not trigger_type or not actions:
+            return jsonify({'error': 'name, trigger_type, and actions are required'}), 400
+
+        pipeline_id = db.create_pipeline(
+            name=name,
+            description=description,
+            trigger_type=trigger_type,
+            trigger_config=trigger_config,
+            actions=actions,
+            enabled=enabled
+        )
+
+        return jsonify({
+            'success': True,
+            'pipeline_id': pipeline_id
+        })
+
+    except Exception as e:
+        print(f"Error creating pipeline: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pipelines/<int:pipeline_id>', methods=['GET'])
+def get_pipeline(pipeline_id):
+    """Get pipeline by ID"""
+    try:
+        pipeline_data = db.get_pipeline(pipeline_id)
+
+        if not pipeline_data:
+            return jsonify({'error': 'Pipeline not found'}), 404
+
+        return jsonify({
+            'success': True,
+            'pipeline': pipeline_data
+        })
+    except Exception as e:
+        print(f"Error getting pipeline: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pipelines/<int:pipeline_id>', methods=['PUT'])
+def update_pipeline(pipeline_id):
+    """Update a pipeline"""
+    try:
+        data = request.get_json()
+
+        db.update_pipeline(
+            pipeline_id=pipeline_id,
+            name=data.get('name'),
+            description=data.get('description'),
+            trigger_type=data.get('trigger_type'),
+            trigger_config=data.get('trigger_config'),
+            actions=data.get('actions'),
+            enabled=data.get('enabled')
+        )
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print(f"Error updating pipeline: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
+def delete_pipeline(pipeline_id):
+    """Delete a pipeline"""
+    try:
+        db.delete_pipeline(pipeline_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error deleting pipeline: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pipelines/<int:pipeline_id>/execute', methods=['POST'])
+def execute_pipeline(pipeline_id):
+    """Execute a pipeline"""
+    try:
+        data = request.get_json() or {}
+        image_ids = data.get('image_ids', [])
+
+        if not image_ids:
+            return jsonify({'error': 'image_ids is required'}), 400
+
+        result = pipeline['executor'].execute_pipeline(
+            pipeline_id=pipeline_id,
+            image_ids=image_ids,
+            trigger_source='manual'
+        )
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"Error executing pipeline: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pipelines/actions', methods=['GET'])
+def get_available_actions():
+    """Get list of available actions"""
+    try:
+        actions = pipeline['actions'].get_available_actions()
+
+        return jsonify({
+            'success': True,
+            'actions': actions
+        })
+    except Exception as e:
+        print(f"Error getting actions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pipelines/templates', methods=['GET'])
+def get_pipeline_templates():
+    """Get pipeline templates"""
+    try:
+        templates = pipeline['templates'].get_all_templates()
+
+        return jsonify({
+            'success': True,
+            'templates': templates
+        })
+    except Exception as e:
+        print(f"Error getting templates: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pipelines/templates/<template_id>', methods=['POST'])
+def create_from_template(template_id):
+    """Create pipeline from template"""
+    try:
+        pipeline_id = pipeline['templates'].create_from_template(template_id, db)
+
+        if not pipeline_id:
+            return jsonify({'error': 'Template not found'}), 404
+
+        return jsonify({
+            'success': True,
+            'pipeline_id': pipeline_id
+        })
+
+    except Exception as e:
+        print(f"Error creating from template: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pipelines/<int:pipeline_id>/executions', methods=['GET'])
+def get_pipeline_executions(pipeline_id):
+    """Get execution history for a pipeline"""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        executions = db.get_pipeline_execution_history(pipeline_id, limit=limit)
+
+        return jsonify({
+            'success': True,
+            'executions': executions,
+            'count': len(executions)
+        })
+    except Exception as e:
+        print(f"Error getting executions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/executions/recent', methods=['GET'])
+def get_recent_executions():
+    """Get recent pipeline executions"""
+    try:
+        limit = request.args.get('limit', 100, type=int)
+        executions = db.get_recent_executions(limit=limit)
+
+        return jsonify({
+            'success': True,
+            'executions': executions,
+            'count': len(executions)
+        })
+    except Exception as e:
+        print(f"Error getting recent executions: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ============ STATIC FILES ============
