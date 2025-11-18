@@ -3659,16 +3659,21 @@ async function openSendToTelegramModal(imageId) {
 
         const modal = document.createElement('div');
         modal.className = 'modal';
+        modal.id = 'telegram-send-modal';
         modal.style.display = 'block';
+
+        const mediaType = image.media_type || 'image';
+        const mediaLabel = mediaType === 'video' ? 'video' : 'image';
+        const mediaIcon = mediaType === 'video' ? '🎥' : '📤';
 
         modal.innerHTML = `
             <div class="modal-overlay" onclick="this.parentElement.remove()"></div>
             <div class="modal-content" style="max-width: 600px;">
                 <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
                 <div class="modal-body">
-                    <h2>📤 Send to Telegram</h2>
+                    <h2>${mediaIcon} Send to Telegram</h2>
                     <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
-                        Send this image to your Telegram chat or group.
+                        Send this ${mediaLabel} to your Telegram chat or group.
                     </p>
 
                     <div style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--radius-md); margin-bottom: var(--spacing-lg);">
@@ -3729,7 +3734,7 @@ async function openSendToTelegramModal(imageId) {
                     <div class="form-actions">
                         <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
                         <button class="btn btn-primary" onclick="sendPhotoToTelegram(${imageId})">
-                            📤 Send to Telegram
+                            ${mediaIcon} Send ${mediaLabel.charAt(0).toUpperCase() + mediaLabel.slice(1)}
                         </button>
                     </div>
                 </div>
@@ -3757,7 +3762,7 @@ async function sendPhotoToTelegram(imageId) {
     localStorage.setItem('telegram_default_caption', caption);
 
     try {
-        showToast('Sending photo to Telegram...', 'info');
+        showToast('Sending to Telegram...', 'info');
 
         const response = await fetch('/api/telegram/send-photo', {
             method: 'POST',
@@ -3774,15 +3779,19 @@ async function sendPhotoToTelegram(imageId) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            showToast('✅ Photo sent to Telegram successfully!', 'success');
-            // Close modal
-            document.querySelector('.modal').remove();
+            const mediaType = data.media_type === 'video' ? 'Video' : 'Photo';
+            showToast(`✅ ${mediaType} sent to Telegram successfully!`, 'success');
+            // Close only the Telegram modal
+            const telegramModal = document.getElementById('telegram-send-modal');
+            if (telegramModal) {
+                telegramModal.remove();
+            }
         } else {
-            showToast(`Failed to send photo: ${data.error || 'Unknown error'}`, 'error');
+            showToast(`Failed to send: ${data.error || 'Unknown error'}`, 'error');
         }
     } catch (error) {
-        console.error('Error sending photo to Telegram:', error);
-        showToast('Failed to send photo to Telegram', 'error');
+        console.error('Error sending to Telegram:', error);
+        showToast('Failed to send to Telegram', 'error');
     }
 }
 

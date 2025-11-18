@@ -754,35 +754,46 @@ def telegram_send_photo():
             'error': 'Image file not found on disk'
         }), 404
 
-    # Send photo using Telegram Bot API
+    # Send photo or video using Telegram Bot API
+    media_type = image.get('media_type', 'image')
+
     try:
-        async def send_photo_async():
+        async def send_media_async():
             bot = Bot(token=bot_token)
-            with open(filepath, 'rb') as photo_file:
-                message = await bot.send_photo(
-                    chat_id=int(chat_id),
-                    photo=photo_file,
-                    caption=caption if caption else None,
-                    parse_mode='Markdown' if caption else None
-                )
+            with open(filepath, 'rb') as media_file:
+                if media_type == 'video':
+                    message = await bot.send_video(
+                        chat_id=int(chat_id),
+                        video=media_file,
+                        caption=caption if caption else None,
+                        parse_mode='Markdown' if caption else None
+                    )
+                else:
+                    message = await bot.send_photo(
+                        chat_id=int(chat_id),
+                        photo=media_file,
+                        caption=caption if caption else None,
+                        parse_mode='Markdown' if caption else None
+                    )
             return message
 
         # Run async function in event loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            message = loop.run_until_complete(send_photo_async())
+            message = loop.run_until_complete(send_media_async())
             return jsonify({
                 'success': True,
                 'message_id': message.message_id,
                 'chat_id': message.chat_id,
-                'file_sent': os.path.basename(filepath)
+                'file_sent': os.path.basename(filepath),
+                'media_type': media_type
             })
         finally:
             loop.close()
 
     except Exception as e:
-        print(f"❌ Error sending photo to Telegram: {e}")
+        print(f"❌ Error sending {media_type} to Telegram: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
