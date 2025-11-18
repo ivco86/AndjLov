@@ -1755,13 +1755,27 @@ def open_image_folder(image_id):
         return jsonify({'error': 'Image not found'}), 404
 
     # Get full file path
-    filepath = get_full_filepath(image.get('filepath', ''))
+    db_filepath = image.get('filepath', '')
+    filepath = get_full_filepath(db_filepath)
+
+    # Debug logging
+    print(f"[OPEN FOLDER DEBUG] Image ID: {image_id}")
+    print(f"[OPEN FOLDER DEBUG] DB filepath: '{db_filepath}'")
+    print(f"[OPEN FOLDER DEBUG] Full filepath: '{filepath}'")
+    print(f"[OPEN FOLDER DEBUG] File exists: {os.path.exists(filepath)}")
+    print(f"[OPEN FOLDER DEBUG] PHOTOS_DIR: '{PHOTOS_DIR}'")
 
     if not os.path.exists(filepath):
-        return jsonify({'error': 'File not found on disk'}), 404
+        print(f"[OPEN FOLDER DEBUG] ERROR: File not found!")
+        return jsonify({
+            'error': 'File not found on disk',
+            'db_filepath': db_filepath,
+            'full_filepath': filepath
+        }), 404
 
     # Get directory path
     folder_path = os.path.dirname(os.path.abspath(filepath))
+    print(f"[OPEN FOLDER DEBUG] Folder to open: '{folder_path}'")
 
     try:
         system = platform.system()
