@@ -2312,9 +2312,9 @@ function getAllBoardsFlat() {
             const currentPath = parentPath;
             result.push({ board, path: currentPath, level });
 
-            if (board.subboards && board.subboards.length > 0) {
+            if (board.sub_boards && board.sub_boards.length > 0) {
                 const newPath = parentPath ? `${parentPath} / ${board.name}` : board.name;
-                traverse(board.subboards, newPath, level + 1);
+                traverse(board.sub_boards, newPath, level + 1);
             }
         });
     }
