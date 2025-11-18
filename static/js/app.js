@@ -2286,13 +2286,38 @@ function populateUploadBoardSelect() {
 
     firstOptions.forEach(opt => select.add(opt));
 
-    // Add existing boards
-    state.boards.forEach(board => {
+    // Get all boards including subboards with full paths
+    const allBoards = getAllBoardsFlat();
+
+    // Add existing boards with hierarchical display
+    allBoards.forEach(({ board, path, level }) => {
         const option = document.createElement('option');
         option.value = board.id;
-        option.textContent = board.name;
+        // Add indentation for subboards
+        const indent = '  '.repeat(level);
+        option.textContent = indent + (path ? path + ' / ' + board.name : board.name);
         select.add(option);
     });
+}
+
+// Helper function to get all boards in flat list with hierarchy info
+function getAllBoardsFlat() {
+    const result = [];
+
+    function traverse(boards, parentPath = '', level = 0) {
+        boards.forEach(board => {
+            const currentPath = parentPath;
+            result.push({ board, path: currentPath, level });
+
+            if (board.subboards && board.subboards.length > 0) {
+                const newPath = parentPath ? `${parentPath} / ${board.name}` : board.name;
+                traverse(board.subboards, newPath, level + 1);
+            }
+        });
+    }
+
+    traverse(state.boards);
+    return result;
 }
 
 function removeUploadFile(index) {
