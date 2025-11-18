@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Gallery</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <h1>🖼️ AI Gallery</h1>
+            <span class="status-indicator" id="aiStatus">🔴 AI Offline</span>
+        </div>
+        
+        <div class="header-center">
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Search images..." 
+                    autocomplete="off"
+                >
+                <button id="searchBtn" aria-label="Search images">🔍</button>
+            </div>
+        </div>
+        
+        <div class="header-right">
+            <button class="btn btn-primary" id="uploadBtn" aria-label="Upload images from your computer">📤 Upload</button>
+            <button class="btn btn-primary" id="scanBtn" aria-label="Scan photos directory for new images">📂 Scan</button>
+            <button class="btn btn-secondary" id="sortImagesBtn" aria-label="Sort images">🔄 Sort</button>
+            <button class="btn btn-secondary" id="findDuplicatesBtn" aria-label="Find duplicate images">🔍 Find Duplicates</button>
+            <button class="btn btn-secondary" id="analyzeBtn" aria-label="Analyze multiple images with AI">🤖 Analyze</button>
+            <button class="btn btn-secondary" id="selectBtn" aria-label="Select multiple images">✓ Select</button>
+            <button class="btn btn-secondary" id="settingsBtn" aria-label="Open settings">⚙️ Settings</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-section">
+                <h3>Views</h3>
+                <ul class="nav-list">
+                    <li>
+                        <a href="#" class="nav-item active" data-view="all">
+                            <span class="icon">🖼️</span>
+                            <span>All Images</span>
+                            <span class="count" id="allCount">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-item" data-view="favorites">
+                            <span class="icon">⭐</span>
+                            <span>Favorites</span>
+                            <span class="count" id="favCount">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-item" data-view="unanalyzed">
+                            <span class="icon">⏳</span>
+                            <span>Unanalyzed</span>
+                            <span class="count" id="unanalyzedCount">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-item" data-view="videos">
+                            <span class="icon">🎬</span>
+                            <span>Videos</span>
+                            <span class="count" id="videosCount">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <h3>Boards</h3>
+                    <button class="btn-icon" id="createBoardBtn" title="Create Board" aria-label="Create new board">+</button>
+                </div>
+                <ul class="nav-list" id="boardsList">
+                    <!-- Boards will be loaded here -->
+                </ul>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Popular Tags</h3>
+                <div class="tag-cloud" id="tagCloud">
+                    <!-- Tag cloud will be loaded here -->
+                </div>
+            </div>
+
+            <div class="sidebar-section stats">
+                <h3>Stats</h3>
+                <div class="stat-item">
+                    <span class="stat-label">Total Images:</span>
+                    <span class="stat-value" id="statTotal">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Analyzed:</span>
+                    <span class="stat-value" id="statAnalyzed">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Boards:</span>
+                    <span class="stat-value" id="statBoards">0</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Breadcrumb -->
+            <div class="breadcrumb" id="breadcrumb">
+                <span class="breadcrumb-item">All Images</span>
+            </div>
+
+            <!-- Loading State -->
+            <div class="loading-state" id="loadingState" style="display: none;">
+                <div class="spinner"></div>
+                <p>Loading images...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <div class="empty-icon">📂</div>
+                <h2>No Images Found</h2>
+                <p>Scan your photos directory to get started</p>
+                <button class="btn btn-primary" id="scanBtnEmpty" aria-label="Scan photos directory for new images">📂 Scan Directory</button>
+            </div>
+
+            <!-- Image Grid -->
+            <div class="image-grid" id="imageGrid">
+                <!-- Images will be loaded here -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Image Modal -->
+    <div class="modal" id="imageModal" style="display: none;">
+        <div class="modal-overlay" id="modalOverlay"></div>
+        <div class="modal-content">
+            <button class="modal-close" id="modalClose" aria-label="Close modal">&times;</button>
+
+            <div class="modal-body" id="modalBody">
+                <!-- Content will be dynamically generated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Board Modal -->
+    <div class="modal" id="createBoardModal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="createBoardClose" aria-label="Close create board modal">&times;</button>
+            
+            <div class="modal-body">
+                <h2>Create Board</h2>
+                
+                <form id="createBoardForm">
+                    <div class="form-group">
+                        <label for="boardName">Board Name *</label>
+                        <input type="text" id="boardName" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="boardDescription">Description</label>
+                        <textarea id="boardDescription" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="boardParent">Parent Board (optional)</label>
+                        <select id="boardParent">
+                            <option value="">-- Top Level --</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelBoardBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create Board</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add to Board Modal -->
+    <div class="modal" id="addToBoardModal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="addToBoardClose" aria-label="Close add to board modal">&times;</button>
+            
+            <div class="modal-body">
+                <h2>Add to Board</h2>
+                
+                <div class="board-selection" id="boardSelection">
+                    <!-- Board checkboxes will be loaded here -->
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelAddToBoardBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveAddToBoardBtn">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Style Selector Modal -->
+    <div class="modal" id="aiStyleModal" style="display: none;">
+        <div class="modal-overlay" id="aiStyleOverlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="aiStyleClose" aria-label="Close AI style selector modal">&times;</button>
+
+            <div class="modal-body">
+                <h2>Choose Analysis Style</h2>
+
+                <div class="style-selection" id="styleSelection" style="margin-top: var(--spacing-lg);">
+                    <!-- Styles will be loaded here -->
+                </div>
+
+                <div id="customPromptSection" style="display: none; margin-top: var(--spacing-md);">
+                    <div class="form-group">
+                        <label for="customPrompt">Custom Prompt:</label>
+                        <textarea
+                            id="customPrompt"
+                            rows="5"
+                            placeholder="Enter your custom AI prompt here..."></textarea>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelAIStyleBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="analyzeWithStyleBtn">Analyze</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Images Modal -->
+    <div class="modal" id="uploadModal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="uploadModalClose" aria-label="Close upload modal">&times;</button>
+
+            <div class="modal-body">
+                <h2>Upload Media</h2>
+
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <p>Drag and drop images or videos here</p>
+                    <p style="color: var(--text-muted); font-size: 0.875rem;">or</p>
+                    <button type="button" class="btn btn-primary" id="selectFilesBtn">Select Files</button>
+                    <input type="file" id="fileInput" multiple accept="image/*,video/*" style="display: none;">
+                </div>
+                
+                <div id="uploadPreview" style="margin-top: var(--spacing-lg); display: none;">
+                    <h3 style="font-size: 0.875rem; margin-bottom: var(--spacing-sm);">Selected Files:</h3>
+                    <div id="uploadFileList"></div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelUploadBtn">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="startUploadBtn">Upload</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Board Modal -->
+    <div class="modal" id="renameBoardModal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="renameBoardClose" aria-label="Close rename board modal">&times;</button>
+
+            <div class="modal-body">
+                <h2>Rename Board</h2>
+
+                <form id="renameBoardForm">
+                    <div class="form-group">
+                        <label for="renameBoardName">New Name *</label>
+                        <input type="text" id="renameBoardName" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="renameBoardDescription">Description</label>
+                        <textarea id="renameBoardDescription" rows="3"></textarea>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelRenameBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Rename</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Merge Board Modal -->
+    <div class="modal" id="mergeBoardModal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="mergeBoardClose" aria-label="Close merge board modal">&times;</button>
+
+            <div class="modal-body">
+                <h2>Merge Board</h2>
+
+                <p style="margin-bottom: var(--spacing-md); color: var(--text-secondary);">
+                    Merge <strong id="mergeSourceName"></strong> into another board.
+                    All images and sub-boards will be moved.
+                </p>
+
+                <form id="mergeBoardForm">
+                    <div class="form-group">
+                        <label for="mergeTargetBoard">Merge into *</label>
+                        <select id="mergeTargetBoard" required>
+                            <option value="">-- Select Board --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="mergeDeleteSource" checked>
+                            Delete source board after merge
+                        </label>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelMergeBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Merge Boards</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Board Modal -->
+    <div class="modal" id="deleteBoardModal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="deleteBoardClose" aria-label="Close delete board modal">&times;</button>
+
+            <div class="modal-body">
+                <h2>Delete Board</h2>
+
+                <p style="margin-bottom: var(--spacing-md); color: var(--text-secondary);">
+                    Are you sure you want to delete <strong id="deleteSourceName"></strong>?
+                </p>
+
+                <form id="deleteBoardForm">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="deleteSubBoards">
+                            Also delete all sub-boards
+                        </label>
+                    </div>
+
+                    <p style="font-size: 0.875rem; color: var(--text-muted);">
+                        Note: Images will not be deleted, only board relationships.
+                    </p>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelDeleteBtn">Cancel</button>
+                        <button type="submit" class="btn btn-danger">Delete Board</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Move Board Modal -->
+    <div class="modal" id="moveBoardModal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="moveBoardClose" aria-label="Close move board modal">&times;</button>
+
+            <div class="modal-body">
+                <h2>Move Board</h2>
+
+                <p style="margin-bottom: var(--spacing-md); color: var(--text-secondary);">
+                    Move <strong id="moveSourceName"></strong> to a new location.
+                </p>
+
+                <form id="moveBoardForm">
+                    <div class="form-group">
+                        <label for="moveTargetBoard">Move to *</label>
+                        <select id="moveTargetBoard" required>
+                            <option value="">-- Top Level (Make Independent) --</option>
+                        </select>
+                    </div>
+
+                    <p style="font-size: 0.875rem; color: var(--text-muted);">
+                        Select a parent board or choose "Top Level" to make this board independent.
+                    </p>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelMoveBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Move Board</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Image Modal -->
+    <div class="modal" id="editImageModal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="editImageClose" aria-label="Close edit image modal">&times;</button>
+
+            <div class="modal-body">
+                <h2>Edit Image</h2>
+
+                <form id="editImageForm">
+                    <div class="form-group">
+                        <label for="editImageFilename">Filename *</label>
+                        <input type="text" id="editImageFilename" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="editImageDescription">Description</label>
+                        <textarea id="editImageDescription" rows="4" placeholder="Enter image description..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="editImageTags">Tags</label>
+                        <div id="editTagsContainer" style="display: flex; flex-wrap: wrap; gap: var(--spacing-xs); margin-bottom: var(--spacing-sm);">
+                            <!-- Existing tags will be shown here -->
+                        </div>
+                        <div style="display: flex; gap: var(--spacing-xs);">
+                            <input
+                                type="text"
+                                id="editImageNewTag"
+                                placeholder="Add new tag..."
+                                style="flex: 1;"
+                            >
+                            <button type="button" class="btn btn-secondary" id="addTagBtn">+ Add</button>
+                        </div>
+                        <small>Press Enter or click Add to add a tag</small>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelEditImageBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal" style="display: none;">
+        <div class="modal-overlay" id="settingsOverlay"></div>
+        <div class="modal-content" style="max-width: 600px;">
+            <button class="modal-close" id="settingsClose" aria-label="Close settings">&times;</button>
+
+            <div class="modal-body">
+                <h2>⚙️ Settings</h2>
+
+                <!-- Telegram Bot Settings -->
+                <div class="settings-section">
+                    <h3>📱 Telegram Bot</h3>
+
+                    <div class="bot-status" id="botStatus">
+                        <div class="status-indicator">
+                            <span class="status-dot" id="botStatusDot">🔴</span>
+                            <span id="botStatusText">Bot Offline</span>
+                        </div>
+                        <div class="bot-controls">
+                            <button class="btn btn-sm btn-primary" id="startBotBtn">▶️ Start</button>
+                            <button class="btn btn-sm btn-danger" id="stopBotBtn">⏹️ Stop</button>
+                            <button class="btn btn-sm btn-secondary" id="testBotBtn">🔍 Test</button>
+                            <button class="btn btn-sm btn-secondary" id="viewLogsBtn">📄 View Logs</button>
+                        </div>
+                    </div>
+
+                    <div id="botLogsSection" style="display: none; margin-top: var(--spacing-md);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-sm);">
+                            <h4 style="margin: 0;">Bot Logs</h4>
+                            <button class="btn btn-sm btn-secondary" id="refreshLogsBtn">🔄 Refresh</button>
+                        </div>
+                        <pre id="botLogs" style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: var(--spacing-md); max-height: 300px; overflow-y: auto; font-size: 12px; color: var(--text-secondary);"></pre>
+                    </div>
+
+                    <form id="botConfigForm">
+                        <div class="form-group">
+                            <label for="botToken">Bot Token (from @BotFather)</label>
+                            <input
+                                type="password"
+                                id="botToken"
+                                placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+                                autocomplete="off"
+                            >
+                            <small>Get your token from <a href="https://t.me/botfather" target="_blank">@BotFather</a> on Telegram</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="autoAnalyze" checked>
+                                Auto-analyze photos with AI
+                            </label>
+                            <small>Automatically analyze photos when uploaded via Telegram</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="aiStyle">AI Analysis Style</label>
+                            <select id="aiStyle">
+                                <option value="classic">Classic - Balanced descriptions</option>
+                                <option value="detailed">Detailed - Comprehensive analysis</option>
+                                <option value="tags">Tags - Focus on keywords</option>
+                            </select>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
+                        </div>
+                    </form>
+
+                    <div class="help-text" style="margin-top: var(--spacing-md);">
+                        <p><strong>How to use:</strong></p>
+                        <ol>
+                            <li>Create a bot with @BotFather on Telegram</li>
+                            <li>Copy the bot token and paste it above</li>
+                            <li>Save configuration and start the bot</li>
+                            <li>Add bot to a group or send photos directly</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Board Context Menu -->
+    <div class="context-menu" id="boardContextMenu" style="display: none;">
+        <div class="context-menu-item" data-action="rename">
+            ✏️ Rename
+        </div>
+        <div class="context-menu-item" data-action="move">
+            📁 Move to...
+        </div>
+        <div class="context-menu-item" data-action="merge">
+            🔀 Merge into...
+        </div>
+        <div class="context-menu-item" data-action="delete">
+            🗑️ Delete
+        </div>
+    </div>
+
+    <!-- Batch Operations Bar -->
+    <div class="batch-operations-bar" id="batchOperationsBar" style="display: none;">
+        <div class="batch-info">
+            <span id="selectedCount">0</span> selected
+            <button class="btn-text" id="selectAllBtn">Select All</button>
+            <button class="btn-text" id="deselectAllBtn">Deselect All</button>
+        </div>
+        <div class="batch-actions">
+            <button class="btn btn-sm btn-secondary" id="batchAnalyzeBtn">🤖 AI Analysis</button>
+            <button class="btn btn-sm btn-secondary" id="batchTagBtn">🏷️ AI Tags</button>
+            <button class="btn btn-sm btn-secondary" id="batchNameBtn">✏️ AI Names</button>
+            <button class="btn btn-sm btn-primary" id="batchAddToBoardBtn">📌 Add to Board</button>
+            <button class="btn btn-sm btn-danger" id="closeBatchBtn">✕</button>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Image Sort Menu -->
+    <div class="context-menu" id="imageSortMenu" style="display: none;">
+        <div class="context-menu-item sort-option active" data-sort="date-desc">
+            📅 Newest First
+        </div>
+        <div class="context-menu-item sort-option" data-sort="date-asc">
+            📅 Oldest First
+        </div>
+        <div class="context-menu-item sort-option" data-sort="name-asc">
+            🔤 Name A-Z
+        </div>
+        <div class="context-menu-item sort-option" data-sort="name-desc">
+            🔤 Name Z-A
+        </div>
+        <div class="context-menu-item sort-option" data-sort="size-desc">
+            📏 Largest First
+        </div>
+        <div class="context-menu-item sort-option" data-sort="size-asc">
+            📏 Smallest First
+        </div>
+    </div>
+
+    <!-- Duplicates Modal -->
+    <div class="modal" id="duplicatesModal" style="display: none;">
+        <div class="modal-overlay" id="duplicatesOverlay"></div>
+        <div class="modal-content" style="max-width: 90vw;">
+            <button class="modal-close" id="duplicatesClose" aria-label="Close duplicates finder">&times;</button>
+
+            <div class="modal-body" id="duplicatesBody">
+                <h2>🔍 Duplicate Images</h2>
+                <div id="duplicatesContent">
+                    <!-- Duplicate groups will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

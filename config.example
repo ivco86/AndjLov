@@ -1,0 +1,22 @@
+# AI Gallery Configuration
+# Copy this to .env or set as environment variables
+
+# Photos directory to scan
+# Default: ./photos
+PHOTOS_DIR=./photos
+
+# LM Studio API endpoint
+# Default: http://localhost:1234
+LM_STUDIO_URL=http://localhost:1234
+
+# Database path
+# Default: data/gallery.db
+DATABASE_PATH=data/gallery.db
+
+# Server configuration
+# Default: 0.0.0.0:5000
+SERVER_HOST=0.0.0.0
+SERVER_PORT=5000
+
+# Flask debug mode (set to False in production)
+FLASK_DEBUG=True
