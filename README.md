@@ -9,6 +9,7 @@ A powerful local photo gallery application that uses AI to automatically describ
 - 🔍 **Full-Text Search**: Search across filenames, descriptions, and tags
 - ⭐ **Favorites**: Mark and filter your favorite images
 - ✏️ **File Management**: Rename files directly from the UI
+- 📄 **Export Features**: Generate PDF catalogs and export metadata to CSV/JSON
 - 🌐 **Fully Offline**: No cloud dependencies, everything runs locally
 - 🎨 **Beautiful UI**: Clean, dark-themed interface optimized for photo viewing
 - 📱 **Responsive**: Works on desktop, tablet, and mobile
@@ -133,6 +134,8 @@ ai-gallery/
 ├── app.py              # Flask application & API endpoints
 ├── database.py         # Database layer (SQLite operations)
 ├── ai_service.py       # LM Studio integration
+├── pdf_catalog.py      # PDF catalog generation
+├── export_utils.py     # CSV/JSON export utilities
 ├── requirements.txt    # Python dependencies
 ├── templates/
 │   └── index.html     # Main HTML template
@@ -184,6 +187,16 @@ ai-gallery/
 - `DELETE /api/boards/:id` - Delete board
 - `POST /api/boards/:id/images` - Add image to board
 - `DELETE /api/boards/:id/images` - Remove image from board
+
+### Export
+- `POST /api/export/images/csv` - Export selected images to CSV
+- `POST /api/export/images/json` - Export selected images to JSON
+- `POST /api/export/images/pdf` - Generate PDF catalog from selected images
+- `GET /api/export/boards/:id/csv` - Export board images to CSV
+- `GET /api/export/boards/:id/json` - Export board images to JSON
+- `POST /api/export/boards/:id/pdf` - Generate PDF catalog for board
+
+For detailed export documentation, see [EXPORT_FEATURES.md](EXPORT_FEATURES.md)
 
 ## 🐛 Troubleshooting
 
@@ -265,7 +278,7 @@ For detailed setup instructions, see [TELEGRAM_BOT.md](TELEGRAM_BOT.md)
 - Drag-and-drop image management
 - Bulk operations (select multiple images)
 - Export boards as ZIP archives
-- Video support
+- Enhanced video support
 - Face detection and recognition
 - Duplicate image detection
 - Timeline view by date
