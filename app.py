@@ -8,6 +8,7 @@ from werkzeug.utils import secure_filename
 from pathlib import Path
 import os
 import sys
+import json
 import mimetypes
 from PIL import Image, ImageDraw, ImageFont
 import json
@@ -120,6 +121,7 @@ PHOTOS_DIR = os.environ.get('PHOTOS_DIR', './photos')
 DATA_DIR = os.environ.get('DATA_DIR', 'data')
 LM_STUDIO_URL = os.environ.get('LM_STUDIO_URL', 'http://localhost:1234')
 DATABASE_PATH = os.environ.get('DATABASE_PATH', 'data/gallery.db')
+EXTERNAL_APPS_CONFIG = os.path.join(DATA_DIR, 'external_apps.json')
 
 # Helper function to get full file path
 def get_full_filepath(filepath):
@@ -153,27 +155,38 @@ SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
 VIDEO_FORMATS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.m4v'}
 ALL_MEDIA_FORMATS = SUPPORTED_FORMATS | VIDEO_FORMATS
 
-# External applications configuration
-EXTERNAL_APPS = {
-    'image': [
-        {'id': 'gimp', 'name': 'GIMP', 'command': 'gimp'},
-        {'id': 'photoshop', 'name': 'Photoshop', 'command': 'photoshop'},
-        {'id': 'krita', 'name': 'Krita', 'command': 'krita'},
-        {'id': 'inkscape', 'name': 'Inkscape', 'command': 'inkscape'},
-        {'id': 'illustrator', 'name': 'Illustrator', 'command': 'illustrator'},
-        {'id': 'affinity', 'name': 'Affinity Photo', 'command': 'affinity-photo'},
-        {'id': 'system', 'name': 'System Default', 'command': 'xdg-open'},
-    ],
-    'video': [
-        {'id': 'vlc', 'name': 'VLC Player', 'command': 'vlc'},
-        {'id': 'mpv', 'name': 'MPV Player', 'command': 'mpv'},
-        {'id': 'kdenlive', 'name': 'Kdenlive', 'command': 'kdenlive'},
-        {'id': 'davinci', 'name': 'DaVinci Resolve', 'command': 'davinci-resolve'},
-        {'id': 'premiere', 'name': 'Premiere Pro', 'command': 'premiere'},
-        {'id': 'ffmpeg', 'name': 'FFplay', 'command': 'ffplay'},
-        {'id': 'system', 'name': 'System Default', 'command': 'xdg-open'},
-    ]
-}
+# External applications configuration - loaded from JSON file
+def load_external_apps():
+    """Load external apps configuration from JSON file"""
+    try:
+        if os.path.exists(EXTERNAL_APPS_CONFIG):
+            with open(EXTERNAL_APPS_CONFIG, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading external apps config: {e}")
+
+    # Default configuration if file doesn't exist
+    return {
+        'image': [
+            {'id': 'system', 'name': 'System Default', 'command': 'system', 'path': '', 'enabled': True}
+        ],
+        'video': [
+            {'id': 'system', 'name': 'System Default', 'command': 'system', 'path': '', 'enabled': True}
+        ]
+    }
+
+def save_external_apps(apps_config):
+    """Save external apps configuration to JSON file"""
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(EXTERNAL_APPS_CONFIG, 'w', encoding='utf-8') as f:
+            json.dump(apps_config, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Error saving external apps config: {e}")
+        return False
+
+EXTERNAL_APPS = load_external_apps()
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -386,6 +399,93 @@ def get_external_apps():
         'apps': EXTERNAL_APPS
     })
 
+@app.route('/api/settings/external-apps', methods=['POST'])
+def add_external_app():
+    """Add new external application"""
+    global EXTERNAL_APPS
+
+    data = request.get_json() or {}
+    media_type = data.get('media_type')  # 'image' or 'video'
+    app_data = data.get('app')
+
+    if not media_type or media_type not in ['image', 'video']:
+        return jsonify({'error': 'media_type must be "image" or "video"'}), 400
+
+    if not app_data or not all(k in app_data for k in ['id', 'name', 'command']):
+        return jsonify({'error': 'app must have id, name, and command'}), 400
+
+    # Check if ID already exists
+    existing = next((a for a in EXTERNAL_APPS.get(media_type, []) if a['id'] == app_data['id']), None)
+    if existing:
+        return jsonify({'error': f'App with id "{app_data["id"]}" already exists'}), 409
+
+    # Add defaults
+    app_data.setdefault('path', '')
+    app_data.setdefault('enabled', True)
+
+    # Add to list
+    if media_type not in EXTERNAL_APPS:
+        EXTERNAL_APPS[media_type] = []
+    EXTERNAL_APPS[media_type].append(app_data)
+
+    # Save to file
+    if save_external_apps(EXTERNAL_APPS):
+        return jsonify({'success': True, 'app': app_data})
+    else:
+        return jsonify({'error': 'Failed to save configuration'}), 500
+
+@app.route('/api/settings/external-apps/<media_type>/<app_id>', methods=['PUT'])
+def update_external_app(media_type, app_id):
+    """Update external application"""
+    global EXTERNAL_APPS
+
+    if media_type not in ['image', 'video']:
+        return jsonify({'error': 'media_type must be "image" or "video"'}), 400
+
+    data = request.get_json() or {}
+
+    # Find app
+    app_list = EXTERNAL_APPS.get(media_type, [])
+    app_index = next((i for i, a in enumerate(app_list) if a['id'] == app_id), None)
+
+    if app_index is None:
+        return jsonify({'error': f'App "{app_id}" not found'}), 404
+
+    # Update fields
+    allowed_fields = ['name', 'command', 'path', 'enabled']
+    for field in allowed_fields:
+        if field in data:
+            EXTERNAL_APPS[media_type][app_index][field] = data[field]
+
+    # Save to file
+    if save_external_apps(EXTERNAL_APPS):
+        return jsonify({'success': True, 'app': EXTERNAL_APPS[media_type][app_index]})
+    else:
+        return jsonify({'error': 'Failed to save configuration'}), 500
+
+@app.route('/api/settings/external-apps/<media_type>/<app_id>', methods=['DELETE'])
+def delete_external_app(media_type, app_id):
+    """Delete external application"""
+    global EXTERNAL_APPS
+
+    if media_type not in ['image', 'video']:
+        return jsonify({'error': 'media_type must be "image" or "video"'}), 400
+
+    # Find and remove app
+    app_list = EXTERNAL_APPS.get(media_type, [])
+    app_index = next((i for i, a in enumerate(app_list) if a['id'] == app_id), None)
+
+    if app_index is None:
+        return jsonify({'error': f'App "{app_id}" not found'}), 404
+
+    removed_app = EXTERNAL_APPS[media_type].pop(app_index)
+
+    # Save to file
+    if save_external_apps(EXTERNAL_APPS):
+        return jsonify({'success': True, 'removed': removed_app})
+    else:
+        return jsonify({'error': 'Failed to save configuration'}), 500
+
 @app.route('/api/images/<int:image_id>/open-with', methods=['POST'])
 def open_with_external_app(image_id):
     """Open image/video with external application"""
@@ -416,13 +516,37 @@ def open_with_external_app(image_id):
         if not app:
             return jsonify({'error': f'Application {app_id} not found for {media_type}'}), 404
 
+        # Check if app is enabled
+        if not app.get('enabled', True):
+            return jsonify({'error': f'Application {app["name"]} is disabled'}), 400
+
         # Get absolute path
         abs_filepath = os.path.abspath(filepath)
 
-        # Launch application in background
-        command = [app['command'], abs_filepath]
+        # Determine executable path and build command
+        app_path = app.get('path', '').strip()
+        app_command = app.get('command', '').strip()
 
-        print(f"[OPEN_WITH] Opening {abs_filepath} with {app['name']} ({app['command']})")
+        if app_path:
+            # Use custom path if specified
+            command = [app_path, abs_filepath]
+        elif app_command == 'system':
+            # System default - use OS-specific opener
+            import platform
+            system = platform.system()
+            if system == 'Windows':
+                # On Windows, use 'start' command with empty string
+                command = ['cmd', '/c', 'start', '', abs_filepath]
+            elif system == 'Darwin':
+                command = ['open', abs_filepath]
+            else:
+                command = ['xdg-open', abs_filepath]
+        else:
+            # Use command name (assumes it's in PATH)
+            command = [app_command, abs_filepath]
+
+        print(f"[OPEN_WITH] Opening {abs_filepath} with {app['name']}")
+        print(f"[OPEN_WITH] Command: {' '.join(command)}")
 
         # Start process in background (detached)
         subprocess.Popen(
