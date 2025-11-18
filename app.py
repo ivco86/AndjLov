@@ -30,6 +30,7 @@ from database import Database
 from ai_service import AIService
 from pdf_catalog import PDFCatalogGenerator
 from export_utils import MetadataExporter, BoardExporter
+from reverse_image_search import ReverseImageSearch, get_copyright_tips, get_usage_detection_tips
 
 # Helper functions for video processing
 def extract_video_frame(video_path, output_path, time_sec=1.0):
@@ -1671,6 +1672,39 @@ def export_images_pdf():
         except:
             pass
         return jsonify({'error': f'Failed to generate PDF: {str(e)}'}), 500
+
+# ============ REVERSE IMAGE SEARCH ============
+
+@app.route('/api/images/<int:image_id>/reverse-search', methods=['GET'])
+def get_reverse_search_options(image_id):
+    """Get reverse image search options for an image"""
+    # Get image info
+    image = db.get_image(image_id)
+    if not image:
+        return jsonify({'error': 'Image not found'}), 404
+
+    # Construct image URL (accessible from client)
+    image_url = f'/api/images/{image_id}/file'
+
+    # Get all search options
+    search_options = ReverseImageSearch.get_all_search_options(image_id, image_url)
+
+    # Get helpful tips
+    copyright_tips = get_copyright_tips()
+    usage_tips = get_usage_detection_tips()
+
+    # Get search guide
+    search_guide = ReverseImageSearch.create_search_guide()
+
+    return jsonify({
+        'success': True,
+        'image_id': image_id,
+        'image_filename': image['filename'],
+        'search_options': search_options,
+        'copyright_tips': copyright_tips,
+        'usage_detection_tips': usage_tips,
+        'search_guide': search_guide
+    })
 
 # ============ STATIC FILES ============
 

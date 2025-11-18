@@ -1267,6 +1267,9 @@ function updateModal() {
                     <button class="action-btn secondary" onclick="showExportMenu(event, ${image.id})">
                         📄 Export
                     </button>
+                    <button class="action-btn secondary" onclick="openReverseSearchModal(${image.id})">
+                        🔍 Reverse Search
+                    </button>
                 </div>
             </div>
 
@@ -3375,6 +3378,102 @@ function showBatchExportMenu(event) {
     `;
 
     document.body.appendChild(modal);
+}
+
+// ============ Reverse Image Search ============
+
+async function openReverseSearchModal(imageId) {
+    try {
+        const response = await fetch(`/api/images/${imageId}/reverse-search`);
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            showToast('Failed to load search options', 'error');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'block';
+
+        const searchOptionsHTML = data.search_options.map(option => `
+            <div style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); background: var(--bg-tertiary);">
+                <div style="display: flex; align-items: start; gap: var(--spacing-md);">
+                    <div style="font-size: 32px; flex-shrink: 0;">${option.icon}</div>
+                    <div style="flex: 1;">
+                        <h3 style="margin: 0 0 var(--spacing-xs) 0; font-size: 16px; color: var(--text-primary);">
+                            ${escapeHtml(option.provider)}
+                        </h3>
+                        <p style="margin: 0 0 var(--spacing-sm) 0; color: var(--text-secondary); font-size: 14px;">
+                            ${escapeHtml(option.description)}
+                        </p>
+                        ${option.features ? `
+                            <div style="display: flex; flex-wrap: wrap; gap: var(--spacing-xs); margin-bottom: var(--spacing-sm);">
+                                ${option.features.map(feature => `
+                                    <span style="font-size: 11px; padding: 2px 8px; background: var(--bg-secondary); border-radius: var(--radius-sm); color: var(--text-secondary);">
+                                        ${escapeHtml(feature)}
+                                    </span>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                        ${option.download ? `
+                            <a href="${option.url}" download="${data.image_filename}" class="btn btn-primary" style="display: inline-block; text-decoration: none; margin-top: var(--spacing-sm);">
+                                💾 Download Image
+                            </a>
+                        ` : `
+                            <button class="btn btn-primary" onclick="window.open('${option.url}', '_blank')" style="margin-top: var(--spacing-sm);">
+                                🔗 Open ${escapeHtml(option.provider)}
+                            </button>
+                        `}
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        const copyrightTipsHTML = data.copyright_tips.map(tip => `
+            <li style="margin-bottom: var(--spacing-xs); color: var(--text-secondary);">${escapeHtml(tip)}</li>
+        `).join('');
+
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="this.parentElement.remove()"></div>
+            <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+                <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
+                <div class="modal-body">
+                    <h2>🔍 Reverse Image Search</h2>
+                    <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
+                        Find where this image appears online, discover its original source, and check copyright information.
+                    </p>
+
+                    <div style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--radius-md); margin-bottom: var(--spacing-lg);">
+                        <strong style="color: var(--text-primary);">Image:</strong> ${escapeHtml(data.image_filename)}
+                    </div>
+
+                    <h3 style="margin-bottom: var(--spacing-md);">Search Engines</h3>
+                    ${searchOptionsHTML}
+
+                    <details style="margin-top: var(--spacing-xl);">
+                        <summary style="cursor: pointer; font-weight: 600; color: var(--text-primary); margin-bottom: var(--spacing-md);">
+                            📋 Copyright & Usage Tips
+                        </summary>
+                        <div style="padding: var(--spacing-md); background: var(--bg-tertiary); border-radius: var(--radius-md); margin-top: var(--spacing-md);">
+                            <ul style="margin: 0; padding-left: var(--spacing-lg);">
+                                ${copyrightTipsHTML}
+                            </ul>
+                        </div>
+                    </details>
+
+                    <div class="form-actions" style="margin-top: var(--spacing-xl);">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+    } catch (error) {
+        console.error('Reverse search error:', error);
+        showToast('Failed to open reverse search', 'error');
+    }
 }
 
 console.log('AI Gallery initialized ✨');
