@@ -1604,9 +1604,19 @@ def board_detail(board_id):
         data = request.json
         name = data.get('name')
         description = data.get('description')
-        
-        db.update_board(board_id, name, description)
-        
+        parent_id = data.get('parent_id')
+
+        # Update basic info if provided
+        if name is not None or description is not None:
+            db.update_board(board_id, name, description)
+
+        # Move board if parent_id is explicitly provided (including None for top-level)
+        if 'parent_id' in data:
+            try:
+                db.move_board(board_id, parent_id)
+            except ValueError as e:
+                return jsonify({'error': str(e)}), 400
+
         return jsonify({
             'success': True,
             'board_id': board_id
