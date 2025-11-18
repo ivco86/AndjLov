@@ -252,10 +252,30 @@
                     <button type="button" class="btn btn-primary" id="selectFilesBtn">Select Files</button>
                     <input type="file" id="fileInput" multiple accept="image/*,video/*" style="display: none;">
                 </div>
-                
+
                 <div id="uploadPreview" style="margin-top: var(--spacing-lg); display: none;">
                     <h3 style="font-size: 0.875rem; margin-bottom: var(--spacing-sm);">Selected Files:</h3>
                     <div id="uploadFileList"></div>
+
+                    <div class="form-group" style="margin-top: var(--spacing-lg);">
+                        <label for="uploadBoardSelect">Add to Board (optional)</label>
+                        <select id="uploadBoardSelect" style="width: 100%; padding: var(--spacing-sm); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary);">
+                            <option value="">-- None (just upload) --</option>
+                            <option value="__create_new__">➕ Create New Board...</option>
+                        </select>
+                    </div>
+
+                    <div id="createBoardSection" style="display: none; margin-top: var(--spacing-md); padding: var(--spacing-md); background: var(--bg-tertiary); border-radius: var(--radius-md);">
+                        <div class="form-group" style="margin-bottom: var(--spacing-sm);">
+                            <label for="newBoardNameUpload">New Board Name *</label>
+                            <input type="text" id="newBoardNameUpload" placeholder="Enter board name">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="newBoardDescUpload">Description (optional)</label>
+                            <textarea id="newBoardDescUpload" rows="2" placeholder="Enter description"></textarea>
+                        </div>
+                    </div>
+
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" id="cancelUploadBtn">Cancel</button>
                         <button type="button" class="btn btn-primary" id="startUploadBtn">Upload</button>

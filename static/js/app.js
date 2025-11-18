@@ -1994,10 +1994,25 @@ function attachEventListeners() {
             if (fileInput) fileInput.click();
         });
     }
-    
+
     if (fileInput) fileInput.addEventListener('change', handleFileSelect);
     if (cancelUploadBtn) cancelUploadBtn.addEventListener('click', closeUploadModal);
     if (startUploadBtn) startUploadBtn.addEventListener('click', uploadFiles);
+
+    // Board selection change handler
+    const uploadBoardSelect = document.getElementById('uploadBoardSelect');
+    if (uploadBoardSelect) {
+        uploadBoardSelect.addEventListener('change', (e) => {
+            const createSection = document.getElementById('createBoardSection');
+            if (createSection) {
+                if (e.target.value === '__create_new__') {
+                    createSection.style.display = 'block';
+                } else {
+                    createSection.style.display = 'none';
+                }
+            }
+        });
+    }
     
     // Drag and drop for upload area
     const uploadArea = document.getElementById('uploadArea');
@@ -2205,11 +2220,14 @@ function openUploadModal() {
     const modal = document.getElementById('uploadModal');
     const uploadPreview = document.getElementById('uploadPreview');
     const uploadArea = document.getElementById('uploadArea');
-    
+
     if (modal) modal.style.display = 'block';
     if (uploadPreview) uploadPreview.style.display = 'none';
     if (uploadArea) uploadArea.style.display = 'block';
     state.uploadFiles = [];
+
+    // Populate board selection dropdown
+    populateUploadBoardSelect();
 }
 
 function closeUploadModal() {
@@ -2233,10 +2251,10 @@ function showUploadPreview() {
     const preview = document.getElementById('uploadPreview');
     const fileList = document.getElementById('uploadFileList');
     const uploadArea = document.getElementById('uploadArea');
-    
+
     if (uploadArea) uploadArea.style.display = 'none';
     if (preview) preview.style.display = 'block';
-    
+
     if (fileList) {
         fileList.innerHTML = state.uploadFiles.map((file, index) => `
             <div class="upload-file-item">
@@ -2245,6 +2263,31 @@ function showUploadPreview() {
             </div>
         `).join('');
     }
+
+    // Reset board selection
+    const boardSelect = document.getElementById('uploadBoardSelect');
+    const createSection = document.getElementById('createBoardSection');
+    if (boardSelect) boardSelect.value = '';
+    if (createSection) createSection.style.display = 'none';
+}
+
+function populateUploadBoardSelect() {
+    const select = document.getElementById('uploadBoardSelect');
+    if (!select) return;
+
+    // Keep first two options (None and Create New)
+    const firstOptions = Array.from(select.options).slice(0, 2);
+    select.innerHTML = '';
+
+    firstOptions.forEach(opt => select.add(opt));
+
+    // Add existing boards
+    state.boards.forEach(board => {
+        const option = document.createElement('option');
+        option.value = board.id;
+        option.textContent = board.name;
+        select.add(option);
+    });
 }
 
 function removeUploadFile(index) {
@@ -2263,16 +2306,55 @@ function removeUploadFile(index) {
 
 async function uploadFiles() {
     if (state.uploadFiles.length === 0) return;
-    
+
     if (state.isUploading) {
         showToast('Upload already in progress', 'warning');
         return;
     }
 
+    // Get selected board or create new
+    const boardSelect = document.getElementById('uploadBoardSelect');
+    const selectedBoardValue = boardSelect ? boardSelect.value : '';
+    let targetBoardId = null;
+
+    // Handle board selection
+    if (selectedBoardValue === '__create_new__') {
+        const boardName = document.getElementById('newBoardNameUpload').value.trim();
+        if (!boardName) {
+            showToast('Please enter a board name', 'warning');
+            return;
+        }
+
+        const boardDesc = document.getElementById('newBoardDescUpload').value.trim();
+
+        try {
+            const response = await fetch('/api/boards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: boardName, description: boardDesc })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                targetBoardId = data.board_id;
+                showToast(`Board "${boardName}" created`, 'success');
+            } else {
+                showToast('Failed to create board', 'error');
+                return;
+            }
+        } catch (error) {
+            console.error('Error creating board:', error);
+            showToast('Error creating board', 'error');
+            return;
+        }
+    } else if (selectedBoardValue) {
+        targetBoardId = parseInt(selectedBoardValue);
+    }
+
     state.isUploading = true;
     const uploadBtn = document.getElementById('startUploadBtn');
     const originalText = uploadBtn ? uploadBtn.textContent : '';
-    
+
     if (uploadBtn) {
         uploadBtn.disabled = true;
         uploadBtn.textContent = 'Uploading...';
@@ -2310,12 +2392,28 @@ async function uploadFiles() {
         }
     }
 
+    // Add uploaded images to board if selected
+    if (targetBoardId && uploadedImageIds.length > 0) {
+        for (const imageId of uploadedImageIds) {
+            try {
+                await fetch(`/api/boards/${targetBoardId}/images`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image_id: imageId })
+                });
+            } catch (error) {
+                console.error('Error adding image to board:', error);
+            }
+        }
+    }
+
     const uploadMessage = `Uploaded ${uploaded} image${uploaded !== 1 ? 's' : ''}${failed > 0 ? `, ${failed} failed` : ''}`;
     showToast(uploadMessage, uploaded > 0 ? 'success' : 'error');
 
     closeUploadModal();
 
     await loadImages();
+    await loadBoards();
     await updateStats();
     renderImages();
 
