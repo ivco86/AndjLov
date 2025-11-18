@@ -29,6 +29,7 @@ except ImportError:
 from database import Database
 from ai_service import AIService
 from privacy_service import get_privacy_service
+from research_service import get_research_service
 
 # Security helper function
 def is_safe_path(filepath, base_dir):
@@ -191,6 +192,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 # Initialize services
 db = Database(DATABASE_PATH)
 ai = AIService(LM_STUDIO_URL)
+research = get_research_service(db)
 
 # Telegram Bot Management
 telegram_bot_process = None
@@ -1779,6 +1781,295 @@ def import_data():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e), 'success': False}), 500
+
+# ============ RESEARCH & EDUCATION ENDPOINTS ============
+
+@app.route('/api/annotations', methods=['POST'])
+def add_annotation():
+    """Add annotation to an image"""
+    try:
+        data = request.get_json()
+        image_id = data.get('image_id')
+        class_name = data.get('class_name')
+        x = data.get('x')
+        y = data.get('y')
+        width = data.get('width')
+        height = data.get('height')
+        class_id = data.get('class_id')
+        confidence = data.get('confidence', 1.0)
+        notes = data.get('notes')
+
+        if not all([image_id, class_name, x is not None, y is not None, width, height]):
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        annotation_id = db.add_annotation(
+            image_id=image_id,
+            class_name=class_name,
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            class_id=class_id,
+            confidence=confidence,
+            notes=notes
+        )
+
+        return jsonify({
+            'success': True,
+            'annotation_id': annotation_id
+        })
+
+    except Exception as e:
+        print(f"Error adding annotation: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/images/<int:image_id>/annotations', methods=['GET'])
+def get_image_annotations(image_id):
+    """Get all annotations for an image"""
+    try:
+        annotations = db.get_annotations(image_id)
+        return jsonify({
+            'success': True,
+            'annotations': annotations,
+            'count': len(annotations)
+        })
+    except Exception as e:
+        print(f"Error getting annotations: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/annotations/<int:annotation_id>', methods=['PUT'])
+def update_annotation(annotation_id):
+    """Update an annotation"""
+    try:
+        data = request.get_json()
+        db.update_annotation(
+            annotation_id=annotation_id,
+            class_name=data.get('class_name'),
+            x=data.get('x'),
+            y=data.get('y'),
+            width=data.get('width'),
+            height=data.get('height'),
+            class_id=data.get('class_id'),
+            confidence=data.get('confidence'),
+            notes=data.get('notes')
+        )
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print(f"Error updating annotation: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/annotations/<int:annotation_id>', methods=['DELETE'])
+def delete_annotation(annotation_id):
+    """Delete an annotation"""
+    try:
+        db.delete_annotation(annotation_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error deleting annotation: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/dataset/classes', methods=['GET'])
+def get_dataset_classes():
+    """Get all dataset classes"""
+    try:
+        classes = db.get_dataset_classes()
+        return jsonify({
+            'success': True,
+            'classes': classes
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/dataset/classes', methods=['POST'])
+def add_dataset_class():
+    """Add a new dataset class"""
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        color = data.get('color', '#FF5722')
+        description = data.get('description')
+
+        if not name:
+            return jsonify({'error': 'Class name is required'}), 400
+
+        class_id = db.add_dataset_class(name, color, description)
+
+        return jsonify({
+            'success': True,
+            'class_id': class_id
+        })
+
+    except Exception as e:
+        print(f"Error adding class: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/dataset/stats', methods=['GET'])
+def get_dataset_stats():
+    """Get dataset statistics"""
+    try:
+        stats = db.get_dataset_statistics()
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/citation', methods=['POST'])
+def generate_citation():
+    """Generate citation for an image"""
+    try:
+        data = request.get_json()
+        image_id = data.get('image_id')
+        format_type = data.get('format', 'apa').lower()
+
+        if not image_id:
+            return jsonify({'error': 'image_id is required'}), 400
+
+        image = db.get_image(image_id)
+        if not image:
+            return jsonify({'error': 'Image not found'}), 404
+
+        citation = research.generate_citation(image, format_type)
+
+        return jsonify({
+            'success': True,
+            'citation': citation,
+            'format': format_type
+        })
+
+    except Exception as e:
+        print(f"Error generating citation: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/citation/batch', methods=['POST'])
+def generate_batch_citations():
+    """Generate citations for multiple images"""
+    try:
+        data = request.get_json()
+        image_ids = data.get('image_ids', [])
+        format_type = data.get('format', 'apa').lower()
+
+        if not image_ids:
+            return jsonify({'error': 'image_ids is required'}), 400
+
+        citations = research.generate_batch_citations(image_ids, format_type)
+
+        return jsonify({
+            'success': True,
+            'citations': citations,
+            'count': len(citations)
+        })
+
+    except Exception as e:
+        print(f"Error generating batch citations: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/dataset/export', methods=['GET'])
+def export_dataset():
+    """Export dataset in various formats"""
+    try:
+        format_type = request.args.get('format', 'coco').lower()
+        include_images = request.args.get('include_images', 'false').lower() == 'true'
+        split_dataset = request.args.get('split', 'false').lower() == 'true'
+
+        # Get image IDs from query params or use all annotated images
+        image_ids_param = request.args.get('image_ids')
+        if image_ids_param:
+            image_ids = [int(id.strip()) for id in image_ids_param.split(',')]
+        else:
+            # Get all images with annotations
+            all_annotations = db.get_all_annotations()
+            image_ids = list(set(a['image_id'] for a in all_annotations))
+
+        if format_type == 'coco':
+            coco_data = research.export_dataset_coco(image_ids)
+            return jsonify(coco_data)
+
+        elif format_type == 'yolo':
+            yolo_data = research.export_dataset_yolo(image_ids)
+            # Return as JSON with file contents
+            return jsonify({
+                'success': True,
+                'files': yolo_data['files'],
+                'images': yolo_data['images'],
+                'classes': yolo_data['classes']
+            })
+
+        elif format_type == 'csv':
+            csv_data = research.export_dataset_csv(image_ids)
+            return csv_data, 200, {
+                'Content-Type': 'text/csv',
+                'Content-Disposition': f'attachment; filename="dataset_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+            }
+
+        elif format_type == 'zip':
+            # Export as ZIP file
+            export_format = request.args.get('export_format', 'coco').lower()
+            zip_data = research.export_dataset_zip(export_format, image_ids, include_images, split_dataset)
+
+            return zip_data, 200, {
+                'Content-Type': 'application/zip',
+                'Content-Disposition': f'attachment; filename="dataset_{export_format}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip"'
+            }
+
+        else:
+            return jsonify({'error': f'Unsupported format: {format_type}'}), 400
+
+    except Exception as e:
+        print(f"Error exporting dataset: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/annotations/import-from-privacy', methods=['POST'])
+def import_annotations_from_privacy():
+    """Import privacy zones as annotations"""
+    try:
+        data = request.get_json()
+        image_id = data.get('image_id')
+
+        if not image_id:
+            return jsonify({'error': 'image_id is required'}), 400
+
+        # Get privacy data
+        privacy_data = db.get_privacy_data(image_id)
+        if not privacy_data or not privacy_data.get('privacy_zones'):
+            return jsonify({'error': 'No privacy zones found'}), 404
+
+        # Import privacy zones as annotations
+        zones = privacy_data['privacy_zones']
+        imported_count = 0
+
+        for zone in zones:
+            zone_type = zone.get('type')
+            if zone_type in ['face', 'plate']:
+                class_name = 'face' if zone_type == 'face' else 'license_plate'
+
+                db.add_annotation(
+                    image_id=image_id,
+                    class_name=class_name,
+                    x=zone['x'],
+                    y=zone['y'],
+                    width=zone['w'],
+                    height=zone['h'],
+                    confidence=0.8,
+                    notes='Imported from privacy detection'
+                )
+                imported_count += 1
+
+        return jsonify({
+            'success': True,
+            'imported': imported_count
+        })
+
+    except Exception as e:
+        print(f"Error importing from privacy: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # ============ STATIC FILES ============
 

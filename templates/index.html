@@ -35,6 +35,7 @@
             <button class="btn btn-secondary" id="selectBtn" aria-label="Select multiple images">✓ Select</button>
             <button class="btn btn-secondary" id="privacyBtn" aria-label="Privacy mode">🔒 Privacy</button>
             <button class="btn btn-secondary" id="exportImportBtn" aria-label="Export/Import data">📦 Export/Import</button>
+            <button class="btn btn-secondary" id="researchBtn" aria-label="Research & Education">🎓 Research</button>
             <button class="btn btn-secondary" id="settingsBtn" aria-label="Open settings">⚙️ Settings</button>
         </div>
     </header>
@@ -816,6 +817,208 @@
         </div>
     </div>
 
+    <!-- Research & Education Modal -->
+    <div class="modal" id="researchModal" style="display: none;">
+        <div class="modal-overlay" id="researchOverlay"></div>
+        <div class="modal-body" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+            <button class="modal-close" id="researchClose" aria-label="Close research modal">&times;</button>
+            <h2 style="margin-bottom: var(--spacing-lg);">🎓 Research & Education</h2>
+
+            <!-- Tabs -->
+            <div class="research-tabs" style="display: flex; gap: var(--spacing-sm); margin-bottom: var(--spacing-lg); border-bottom: 2px solid var(--bg-secondary);">
+                <button class="research-tab active" data-tab="annotations" style="padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent;">
+                    📝 Annotations
+                </button>
+                <button class="research-tab" data-tab="citations" style="padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent;">
+                    📚 Citations
+                </button>
+                <button class="research-tab" data-tab="dataset" style="padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent;">
+                    💾 Dataset Export
+                </button>
+            </div>
+
+            <!-- Annotations Tab -->
+            <div class="research-tab-content" id="annotationsTab">
+                <h3>Image Annotations</h3>
+                <p style="color: var(--text-muted); margin-bottom: var(--spacing-md);">
+                    Draw bounding boxes on images for object detection training.
+                </p>
+
+                <div class="dataset-stats" style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--border-radius); margin-bottom: var(--spacing-lg);">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--spacing-md);">
+                        <div class="stat-item">
+                            <span class="stat-label">Annotated Images:</span>
+                            <span class="stat-value" id="statAnnotatedImages">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Total Annotations:</span>
+                            <span class="stat-value" id="statTotalAnnotations">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Classes:</span>
+                            <span class="stat-value" id="statTotalClasses">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: var(--spacing-md);">
+                    <label style="display: block; margin-bottom: var(--spacing-xs);">Annotation Class:</label>
+                    <div style="display: flex; gap: var(--spacing-sm);">
+                        <select id="annotationClassSelect" style="flex: 1; padding: var(--spacing-sm); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                            <option value="">Select or type new class...</option>
+                        </select>
+                        <button class="btn btn-secondary" id="addNewClassBtn">+ Add Class</button>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: var(--spacing-lg);">
+                    <button class="btn btn-primary" id="startAnnotationBtn">
+                        📝 Start Annotating Selected Image
+                    </button>
+                    <button class="btn btn-secondary" id="importFromPrivacyBtn">
+                        🔒 Import from Privacy Zones
+                    </button>
+                </div>
+
+                <div class="class-distribution" id="classDistribution" style="margin-top: var(--spacing-lg);">
+                    <h4>Class Distribution</h4>
+                    <div id="classDistributionList" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+            </div>
+
+            <!-- Citations Tab -->
+            <div class="research-tab-content" id="citationsTab" style="display: none;">
+                <h3>Citation Generator</h3>
+                <p style="color: var(--text-muted); margin-bottom: var(--spacing-md);">
+                    Generate academic citations for your images in various formats.
+                </p>
+
+                <div style="margin-bottom: var(--spacing-lg);">
+                    <label style="display: block; margin-bottom: var(--spacing-xs);">Citation Format:</label>
+                    <select id="citationFormat" style="width: 100%; padding: var(--spacing-sm); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                        <option value="apa">APA (American Psychological Association)</option>
+                        <option value="mla">MLA (Modern Language Association)</option>
+                        <option value="bibtex">BibTeX (LaTeX)</option>
+                        <option value="chicago">Chicago Style</option>
+                    </select>
+                </div>
+
+                <div style="display: flex; gap: var(--spacing-sm); margin-bottom: var(--spacing-lg);">
+                    <button class="btn btn-primary" id="generateCitationBtn">
+                        📚 Generate Citation for Selected
+                    </button>
+                    <button class="btn btn-secondary" id="generateBatchCitationBtn">
+                        📚 Generate for All Selected
+                    </button>
+                </div>
+
+                <div id="citationOutput" style="display: none; background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--border-radius); margin-top: var(--spacing-md);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-sm);">
+                        <h4 style="margin: 0;">Generated Citations</h4>
+                        <button class="btn btn-secondary btn-sm" id="copyCitationsBtn">📋 Copy All</button>
+                    </div>
+                    <div id="citationsList" style="font-family: monospace; white-space: pre-wrap; font-size: 0.875rem; max-height: 400px; overflow-y: auto;"></div>
+                </div>
+            </div>
+
+            <!-- Dataset Export Tab -->
+            <div class="research-tab-content" id="datasetTab" style="display: none;">
+                <h3>Dataset Export</h3>
+                <p style="color: var(--text-muted); margin-bottom: var(--spacing-md);">
+                    Export annotated images for machine learning training.
+                </p>
+
+                <div class="dataset-stats" style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--border-radius); margin-bottom: var(--spacing-lg);">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--spacing-md);">
+                        <div class="stat-item">
+                            <span class="stat-label">Ready to Export:</span>
+                            <span class="stat-value" id="statExportReady">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Total Annotations:</span>
+                            <span class="stat-value" id="statExportAnnotations">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: var(--spacing-md);">
+                    <label style="display: block; margin-bottom: var(--spacing-xs);">Export Format:</label>
+                    <select id="datasetFormat" style="width: 100%; padding: var(--spacing-sm); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                        <option value="coco">COCO Format (JSON) - PyTorch, TensorFlow, Detectron2</option>
+                        <option value="yolo">YOLO Format (TXT) - YOLOv5, YOLOv8, Ultralytics</option>
+                        <option value="csv">CSV Format - Pandas, Excel, Custom Scripts</option>
+                        <option value="zip">ZIP Archive (includes README)</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: var(--spacing-lg);">
+                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                        <input type="checkbox" id="splitDataset">
+                        <span>Create train/val/test splits (70/15/15)</span>
+                    </label>
+                </div>
+
+                <div style="display: flex; gap: var(--spacing-sm); margin-bottom: var(--spacing-lg);">
+                    <button class="btn btn-primary" id="exportDatasetBtn">
+                        💾 Export Dataset
+                    </button>
+                    <button class="btn btn-secondary" id="previewDatasetBtn">
+                        👁️ Preview
+                    </button>
+                </div>
+
+                <div id="datasetPreview" style="display: none; background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--border-radius); margin-top: var(--spacing-md);">
+                    <h4>Dataset Preview</h4>
+                    <pre id="datasetPreviewContent" style="font-family: monospace; font-size: 0.75rem; max-height: 300px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                </div>
+
+                <div style="margin-top: var(--spacing-lg); padding: var(--spacing-md); background: var(--bg-tertiary); border-radius: var(--border-radius);">
+                    <h4 style="margin-bottom: var(--spacing-sm);">📖 Format Guide</h4>
+                    <ul style="margin: 0; padding-left: var(--spacing-lg); font-size: 0.875rem;">
+                        <li><strong>COCO:</strong> Industry standard for object detection. Use with PyTorch, TensorFlow.</li>
+                        <li><strong>YOLO:</strong> Fast and efficient. Use with YOLOv5/v8, Ultralytics.</li>
+                        <li><strong>CSV:</strong> Simple format for custom pipelines and analysis.</li>
+                        <li><strong>ZIP:</strong> Complete package with README and all necessary files.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Annotation Canvas Modal -->
+    <div class="modal" id="annotationCanvasModal" style="display: none;">
+        <div class="modal-overlay" id="annotationCanvasOverlay"></div>
+        <div class="modal-body" style="max-width: 95vw; max-height: 95vh; padding: var(--spacing-md);">
+            <button class="modal-close" id="annotationCanvasClose" aria-label="Close annotation canvas">&times;</button>
+            <h2 style="margin-bottom: var(--spacing-sm);">📝 Image Annotation</h2>
+
+            <div style="display: flex; gap: var(--spacing-md); margin-bottom: var(--spacing-md); align-items: center;">
+                <div style="flex: 1;">
+                    <label style="margin-right: var(--spacing-sm);">Class:</label>
+                    <select id="annotationCanvasClass" style="padding: var(--spacing-xs); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+                <button class="btn btn-primary" id="saveAnnotationsBtn">💾 Save Annotations</button>
+                <button class="btn btn-secondary" id="clearAnnotationsBtn">🗑️ Clear All</button>
+            </div>
+
+            <div style="position: relative; max-width: 100%; max-height: 70vh; overflow: auto; background: var(--bg-tertiary); border-radius: var(--border-radius);">
+                <canvas id="annotationCanvas" style="display: block; max-width: 100%; height: auto; cursor: crosshair;"></canvas>
+            </div>
+
+            <div id="annotationsList" style="margin-top: var(--spacing-md); max-height: 150px; overflow-y: auto;">
+                <h4>Current Annotations</h4>
+                <div id="annotationsListContent"></div>
+            </div>
+
+            <div style="margin-top: var(--spacing-md); padding: var(--spacing-sm); background: var(--bg-secondary); border-radius: var(--border-radius); font-size: 0.875rem;">
+                <strong>Instructions:</strong> Click and drag to draw bounding boxes. Select class before drawing. Press Delete key to remove selected box.
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/app.js"></script>
+    <script src="/static/js/research.js"></script>
 </body>
 </html>

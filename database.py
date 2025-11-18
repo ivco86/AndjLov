@@ -107,6 +107,36 @@ class Database:
             cursor.execute("ALTER TABLE images ADD COLUMN privacy_analyzed_at TIMESTAMP")
             conn.commit()
 
+        # Annotations table for research/ML training
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS annotations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                image_id INTEGER NOT NULL,
+                class_name TEXT NOT NULL,
+                class_id INTEGER,
+                x REAL NOT NULL,
+                y REAL NOT NULL,
+                width REAL NOT NULL,
+                height REAL NOT NULL,
+                confidence REAL DEFAULT 1.0,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Dataset classes table for ML training
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dataset_classes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                color TEXT DEFAULT '#FF5722',
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Create indexes for performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_filepath ON images(filepath)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(is_favorite)")
@@ -119,6 +149,8 @@ class Database:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_boards_parent ON boards(parent_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_board_images_board ON board_images(board_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_board_images_image ON board_images(image_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_annotations_image ON annotations(image_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_annotations_class ON annotations(class_name)")
         
         # Full-text search index - check if needs migration
         cursor.execute("""
@@ -1441,3 +1473,236 @@ class Database:
 
         stats['success'] = True
         return stats
+
+    # ============ ANNOTATION OPERATIONS (Research & Education) ============
+
+    def add_annotation(self, image_id: int, class_name: str, x: float, y: float,
+                      width: float, height: float, class_id: int = None,
+                      confidence: float = 1.0, notes: str = None) -> int:
+        """Add bounding box annotation to image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO annotations (image_id, class_name, class_id, x, y, width, height, confidence, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (image_id, class_name, class_id, x, y, width, height, confidence, notes))
+
+        annotation_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        return annotation_id
+
+    def get_annotations(self, image_id: int) -> List[Dict]:
+        """Get all annotations for an image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, image_id, class_name, class_id, x, y, width, height, confidence, notes, created_at
+            FROM annotations
+            WHERE image_id = ?
+            ORDER BY created_at DESC
+        """, (image_id,))
+
+        annotations = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return annotations
+
+    def update_annotation(self, annotation_id: int, class_name: str = None, x: float = None,
+                         y: float = None, width: float = None, height: float = None,
+                         class_id: int = None, confidence: float = None, notes: str = None):
+        """Update an annotation"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if class_name is not None:
+            updates.append("class_name = ?")
+            params.append(class_name)
+        if class_id is not None:
+            updates.append("class_id = ?")
+            params.append(class_id)
+        if x is not None:
+            updates.append("x = ?")
+            params.append(x)
+        if y is not None:
+            updates.append("y = ?")
+            params.append(y)
+        if width is not None:
+            updates.append("width = ?")
+            params.append(width)
+        if height is not None:
+            updates.append("height = ?")
+            params.append(height)
+        if confidence is not None:
+            updates.append("confidence = ?")
+            params.append(confidence)
+        if notes is not None:
+            updates.append("notes = ?")
+            params.append(notes)
+
+        if updates:
+            updates.append("updated_at = ?")
+            params.append(datetime.now())
+            params.append(annotation_id)
+
+            query = f"UPDATE annotations SET {', '.join(updates)} WHERE id = ?"
+            cursor.execute(query, params)
+            conn.commit()
+
+        conn.close()
+
+    def delete_annotation(self, annotation_id: int):
+        """Delete an annotation"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM annotations WHERE id = ?", (annotation_id,))
+        conn.commit()
+        conn.close()
+
+    def delete_annotations_for_image(self, image_id: int):
+        """Delete all annotations for an image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM annotations WHERE image_id = ?", (image_id,))
+        conn.commit()
+        conn.close()
+
+    def get_all_annotations(self) -> List[Dict]:
+        """Get all annotations across all images"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT a.*, i.filepath, i.filename, i.width as img_width, i.height as img_height
+            FROM annotations a
+            JOIN images i ON a.image_id = i.id
+            ORDER BY a.created_at DESC
+        """)
+
+        annotations = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return annotations
+
+    def get_dataset_statistics(self) -> Dict:
+        """Get statistics about annotated dataset"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # Total images with annotations
+        cursor.execute("""
+            SELECT COUNT(DISTINCT image_id) as annotated_images
+            FROM annotations
+        """)
+        annotated_images = cursor.fetchone()['annotated_images']
+
+        # Total annotations
+        cursor.execute("SELECT COUNT(*) as total_annotations FROM annotations")
+        total_annotations = cursor.fetchone()['total_annotations']
+
+        # Annotations per class
+        cursor.execute("""
+            SELECT class_name, COUNT(*) as count
+            FROM annotations
+            GROUP BY class_name
+            ORDER BY count DESC
+        """)
+        class_distribution = [dict(row) for row in cursor.fetchall()]
+
+        # Total images
+        cursor.execute("SELECT COUNT(*) as total_images FROM images")
+        total_images = cursor.fetchone()['total_images']
+
+        conn.close()
+
+        return {
+            'total_images': total_images,
+            'annotated_images': annotated_images,
+            'unannotated_images': total_images - annotated_images,
+            'total_annotations': total_annotations,
+            'class_distribution': class_distribution
+        }
+
+    # ============ DATASET CLASS OPERATIONS ============
+
+    def add_dataset_class(self, name: str, color: str = '#FF5722', description: str = None) -> int:
+        """Add a dataset class/category"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT INTO dataset_classes (name, color, description)
+                VALUES (?, ?, ?)
+            """, (name, color, description))
+
+            class_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+
+            return class_id
+        except sqlite3.IntegrityError:
+            # Class already exists
+            cursor.execute("SELECT id FROM dataset_classes WHERE name = ?", (name,))
+            class_id = cursor.fetchone()['id']
+            conn.close()
+            return class_id
+
+    def get_dataset_classes(self) -> List[Dict]:
+        """Get all dataset classes"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, name, color, description, created_at
+            FROM dataset_classes
+            ORDER BY name
+        """)
+
+        classes = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return classes
+
+    def update_dataset_class(self, class_id: int, name: str = None, color: str = None, description: str = None):
+        """Update a dataset class"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if name is not None:
+            updates.append("name = ?")
+            params.append(name)
+        if color is not None:
+            updates.append("color = ?")
+            params.append(color)
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+
+        if updates:
+            params.append(class_id)
+            query = f"UPDATE dataset_classes SET {', '.join(updates)} WHERE id = ?"
+            cursor.execute(query, params)
+            conn.commit()
+
+        conn.close()
+
+    def delete_dataset_class(self, class_id: int):
+        """Delete a dataset class"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM dataset_classes WHERE id = ?", (class_id,))
+        conn.commit()
+        conn.close()
