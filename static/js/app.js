@@ -1264,6 +1264,12 @@ function updateModal() {
                     <button class="action-btn secondary" onclick="showOpenWithMenu(event, ${image.id}, '${image.media_type || 'image'}')">
                         🚀 Open With
                     </button>
+                    <button class="action-btn secondary" onclick="showExportMenu(event, ${image.id})">
+                        📄 Export
+                    </button>
+                    <button class="action-btn secondary" onclick="openReverseSearchModal(${image.id})">
+                        🔍 Reverse Search
+                    </button>
                 </div>
             </div>
 
@@ -1542,6 +1548,7 @@ function attachEventListeners() {
     const batchTagBtn = document.getElementById('batchTagBtn');
     const batchNameBtn = document.getElementById('batchNameBtn');
     const batchAddToBoardBtn = document.getElementById('batchAddToBoardBtn');
+    const batchExportBtn = document.getElementById('batchExportBtn');
     const closeBatchBtn = document.getElementById('closeBatchBtn');
 
     if (selectAllBtn) selectAllBtn.addEventListener('click', selectAllImages);
@@ -1550,6 +1557,7 @@ function attachEventListeners() {
     if (batchTagBtn) batchTagBtn.addEventListener('click', batchTagImages);
     if (batchNameBtn) batchNameBtn.addEventListener('click', batchNameImages);
     if (batchAddToBoardBtn) batchAddToBoardBtn.addEventListener('click', batchAddImagesToBoard);
+    if (batchExportBtn) batchExportBtn.addEventListener('click', showBatchExportMenu);
     if (closeBatchBtn) closeBatchBtn.addEventListener('click', () => {
         if (state.selectionMode) {
             toggleSelectionMode();
@@ -1713,6 +1721,8 @@ function attachEventListeners() {
                     openRenameBoardModal(boardId);
                 } else if (action === 'merge') {
                     openMergeBoardModal(boardId);
+                } else if (action === 'export') {
+                    showBoardExportMenu(e, boardId);
                 } else if (action === 'delete') {
                     openDeleteBoardModal(boardId);
                 }
@@ -1984,10 +1994,25 @@ function attachEventListeners() {
             if (fileInput) fileInput.click();
         });
     }
-    
+
     if (fileInput) fileInput.addEventListener('change', handleFileSelect);
     if (cancelUploadBtn) cancelUploadBtn.addEventListener('click', closeUploadModal);
     if (startUploadBtn) startUploadBtn.addEventListener('click', uploadFiles);
+
+    // Board selection change handler
+    const uploadBoardSelect = document.getElementById('uploadBoardSelect');
+    if (uploadBoardSelect) {
+        uploadBoardSelect.addEventListener('change', (e) => {
+            const createSection = document.getElementById('createBoardSection');
+            if (createSection) {
+                if (e.target.value === '__create_new__') {
+                    createSection.style.display = 'block';
+                } else {
+                    createSection.style.display = 'none';
+                }
+            }
+        });
+    }
     
     // Drag and drop for upload area
     const uploadArea = document.getElementById('uploadArea');
@@ -2195,11 +2220,14 @@ function openUploadModal() {
     const modal = document.getElementById('uploadModal');
     const uploadPreview = document.getElementById('uploadPreview');
     const uploadArea = document.getElementById('uploadArea');
-    
+
     if (modal) modal.style.display = 'block';
     if (uploadPreview) uploadPreview.style.display = 'none';
     if (uploadArea) uploadArea.style.display = 'block';
     state.uploadFiles = [];
+
+    // Populate board selection dropdown
+    populateUploadBoardSelect();
 }
 
 function closeUploadModal() {
@@ -2223,10 +2251,10 @@ function showUploadPreview() {
     const preview = document.getElementById('uploadPreview');
     const fileList = document.getElementById('uploadFileList');
     const uploadArea = document.getElementById('uploadArea');
-    
+
     if (uploadArea) uploadArea.style.display = 'none';
     if (preview) preview.style.display = 'block';
-    
+
     if (fileList) {
         fileList.innerHTML = state.uploadFiles.map((file, index) => `
             <div class="upload-file-item">
@@ -2235,6 +2263,31 @@ function showUploadPreview() {
             </div>
         `).join('');
     }
+
+    // Reset board selection
+    const boardSelect = document.getElementById('uploadBoardSelect');
+    const createSection = document.getElementById('createBoardSection');
+    if (boardSelect) boardSelect.value = '';
+    if (createSection) createSection.style.display = 'none';
+}
+
+function populateUploadBoardSelect() {
+    const select = document.getElementById('uploadBoardSelect');
+    if (!select) return;
+
+    // Keep first two options (None and Create New)
+    const firstOptions = Array.from(select.options).slice(0, 2);
+    select.innerHTML = '';
+
+    firstOptions.forEach(opt => select.add(opt));
+
+    // Add existing boards
+    state.boards.forEach(board => {
+        const option = document.createElement('option');
+        option.value = board.id;
+        option.textContent = board.name;
+        select.add(option);
+    });
 }
 
 function removeUploadFile(index) {
@@ -2253,16 +2306,55 @@ function removeUploadFile(index) {
 
 async function uploadFiles() {
     if (state.uploadFiles.length === 0) return;
-    
+
     if (state.isUploading) {
         showToast('Upload already in progress', 'warning');
         return;
     }
 
+    // Get selected board or create new
+    const boardSelect = document.getElementById('uploadBoardSelect');
+    const selectedBoardValue = boardSelect ? boardSelect.value : '';
+    let targetBoardId = null;
+
+    // Handle board selection
+    if (selectedBoardValue === '__create_new__') {
+        const boardName = document.getElementById('newBoardNameUpload').value.trim();
+        if (!boardName) {
+            showToast('Please enter a board name', 'warning');
+            return;
+        }
+
+        const boardDesc = document.getElementById('newBoardDescUpload').value.trim();
+
+        try {
+            const response = await fetch('/api/boards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: boardName, description: boardDesc })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                targetBoardId = data.board_id;
+                showToast(`Board "${boardName}" created`, 'success');
+            } else {
+                showToast('Failed to create board', 'error');
+                return;
+            }
+        } catch (error) {
+            console.error('Error creating board:', error);
+            showToast('Error creating board', 'error');
+            return;
+        }
+    } else if (selectedBoardValue) {
+        targetBoardId = parseInt(selectedBoardValue);
+    }
+
     state.isUploading = true;
     const uploadBtn = document.getElementById('startUploadBtn');
     const originalText = uploadBtn ? uploadBtn.textContent : '';
-    
+
     if (uploadBtn) {
         uploadBtn.disabled = true;
         uploadBtn.textContent = 'Uploading...';
@@ -2300,12 +2392,28 @@ async function uploadFiles() {
         }
     }
 
+    // Add uploaded images to board if selected
+    if (targetBoardId && uploadedImageIds.length > 0) {
+        for (const imageId of uploadedImageIds) {
+            try {
+                await fetch(`/api/boards/${targetBoardId}/images`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image_id: imageId })
+                });
+            } catch (error) {
+                console.error('Error adding image to board:', error);
+            }
+        }
+    }
+
     const uploadMessage = `Uploaded ${uploaded} image${uploaded !== 1 ? 's' : ''}${failed > 0 ? `, ${failed} failed` : ''}`;
     showToast(uploadMessage, uploaded > 0 ? 'success' : 'error');
 
     closeUploadModal();
 
     await loadImages();
+    await loadBoards();
     await updateStats();
     renderImages();
 
@@ -2963,6 +3071,507 @@ function createDuplicateCard(image) {
 function closeDuplicatesModal() {
     const modal = document.getElementById('duplicatesModal');
     if (modal) modal.style.display = 'none';
+}
+
+// ============ Export Functions ============
+
+function showExportMenu(event, imageId) {
+    event.stopPropagation();
+
+    const existingMenu = document.querySelector('.export-dropdown');
+    if (existingMenu) {
+        existingMenu.remove();
+        return;
+    }
+
+    const menu = document.createElement('div');
+    menu.className = 'export-dropdown';
+    menu.style.cssText = `
+        position: fixed;
+        top: ${event.clientY}px;
+        left: ${event.clientX}px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 10000;
+        min-width: 180px;
+    `;
+
+    menu.innerHTML = `
+        <div class="menu-item" onclick="exportSingleImage(${imageId}, 'csv')">
+            📊 Export to CSV
+        </div>
+        <div class="menu-item" onclick="exportSingleImage(${imageId}, 'json')">
+            📋 Export to JSON
+        </div>
+        <div class="menu-item" onclick="exportSingleImage(${imageId}, 'pdf')">
+            📄 Generate PDF
+        </div>
+    `;
+
+    document.body.appendChild(menu);
+
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu() {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        });
+    }, 100);
+}
+
+async function exportSingleImage(imageId, format) {
+    try {
+        showToast(`Preparing ${format.toUpperCase()} export...`, 'info');
+
+        let url, method, body;
+
+        if (format === 'csv') {
+            url = '/api/export/images/csv';
+            method = 'POST';
+            body = JSON.stringify({ image_ids: [imageId] });
+        } else if (format === 'json') {
+            url = '/api/export/images/json';
+            method = 'POST';
+            body = JSON.stringify({ image_ids: [imageId], include_summary: true });
+        } else if (format === 'pdf') {
+            url = '/api/export/images/pdf';
+            method = 'POST';
+            body = JSON.stringify({
+                image_ids: [imageId],
+                title: 'Image Catalog',
+                page_size: 'A4',
+                orientation: 'portrait'
+            });
+        }
+
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: body
+        });
+
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `export.${format}`;
+        if (contentDisposition) {
+            const matches = /filename="(.+?)"/.exec(contentDisposition);
+            if (matches) {
+                filename = matches[1];
+            }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast(`${format.toUpperCase()} exported successfully!`, 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed. Please try again.', 'error');
+    }
+}
+
+function showBoardExportMenu(event, boardId) {
+    event.stopPropagation();
+
+    const existingMenu = document.querySelector('.export-dropdown');
+    if (existingMenu) {
+        existingMenu.remove();
+        return;
+    }
+
+    const menu = document.createElement('div');
+    menu.className = 'export-dropdown';
+    menu.style.cssText = `
+        position: fixed;
+        top: ${event.clientY}px;
+        left: ${event.clientX}px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 10000;
+        min-width: 200px;
+    `;
+
+    menu.innerHTML = `
+        <div class="menu-item" onclick="exportBoard(${boardId}, 'csv')">
+            📊 Export to CSV
+        </div>
+        <div class="menu-item" onclick="exportBoard(${boardId}, 'json')">
+            📋 Export to JSON
+        </div>
+        <div class="menu-item" onclick="showBoardPDFOptions(${boardId})">
+            📄 Generate PDF Catalog
+        </div>
+    `;
+
+    document.body.appendChild(menu);
+
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu() {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        });
+    }, 100);
+}
+
+async function exportBoard(boardId, format) {
+    try {
+        showToast(`Preparing ${format.toUpperCase()} export...`, 'info');
+
+        const url = `/api/export/boards/${boardId}/${format}`;
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `board_export.${format}`;
+        if (contentDisposition) {
+            const matches = /filename="(.+?)"/.exec(contentDisposition);
+            if (matches) {
+                filename = matches[1];
+            }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast(`${format.toUpperCase()} exported successfully!`, 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed. Please try again.', 'error');
+    }
+}
+
+function showBoardPDFOptions(boardId) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+
+    modal.innerHTML = `
+        <div class="modal-overlay" onclick="this.parentElement.remove()"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
+            <div class="modal-body">
+                <h2>PDF Export Options</h2>
+
+                <div class="form-group">
+                    <label>Page Size</label>
+                    <select id="pdfPageSize" style="width: 100%; padding: var(--spacing-sm); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary);">
+                        <option value="A4">A4 (210 × 297 mm)</option>
+                        <option value="letter">Letter (8.5 × 11 in)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Orientation</label>
+                    <select id="pdfOrientation" style="width: 100%; padding: var(--spacing-sm); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary);">
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
+                    <button class="btn btn-primary" onclick="generateBoardPDF(${boardId})">Generate PDF</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+}
+
+async function generateBoardPDF(boardId) {
+    try {
+        const pageSize = document.getElementById('pdfPageSize').value;
+        const orientation = document.getElementById('pdfOrientation').value;
+
+        // Close the options modal
+        document.querySelector('.modal').remove();
+
+        showToast('Generating PDF catalog...', 'info');
+
+        const response = await fetch(`/api/export/boards/${boardId}/pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                page_size: pageSize,
+                orientation: orientation
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('PDF generation failed');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'catalog.pdf';
+        if (contentDisposition) {
+            const matches = /filename="(.+?)"/.exec(contentDisposition);
+            if (matches) {
+                filename = matches[1];
+            }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast('PDF catalog generated successfully!', 'success');
+    } catch (error) {
+        console.error('PDF generation error:', error);
+        showToast('PDF generation failed. Please try again.', 'error');
+    }
+}
+
+async function exportSelectedImages(format) {
+    const selectedImageIds = Array.from(state.selectedImages);
+
+    if (selectedImageIds.length === 0) {
+        showToast('No images selected', 'warning');
+        return;
+    }
+
+    try {
+        showToast(`Exporting ${selectedImageIds.length} images to ${format.toUpperCase()}...`, 'info');
+
+        let url, method, body;
+
+        if (format === 'csv') {
+            url = '/api/export/images/csv';
+            method = 'POST';
+            body = JSON.stringify({ image_ids: selectedImageIds });
+        } else if (format === 'json') {
+            url = '/api/export/images/json';
+            method = 'POST';
+            body = JSON.stringify({ image_ids: selectedImageIds, include_summary: true });
+        } else if (format === 'pdf') {
+            url = '/api/export/images/pdf';
+            method = 'POST';
+            body = JSON.stringify({
+                image_ids: selectedImageIds,
+                title: 'Selected Images',
+                subtitle: `${selectedImageIds.length} images`,
+                page_size: 'A4',
+                orientation: 'portrait'
+            });
+        }
+
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: body
+        });
+
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `export.${format}`;
+        if (contentDisposition) {
+            const matches = /filename="(.+?)"/.exec(contentDisposition);
+            if (matches) {
+                filename = matches[1];
+            }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast(`${format.toUpperCase()} exported successfully!`, 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed. Please try again.', 'error');
+    }
+}
+
+function showBatchExportMenu(event) {
+    if (state.selectedImages.size === 0) {
+        showToast('No images selected', 'warning');
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+
+    modal.innerHTML = `
+        <div class="modal-overlay" onclick="this.parentElement.remove()"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
+            <div class="modal-body">
+                <h2>Export Selected Images</h2>
+                <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
+                    ${state.selectedImages.size} image(s) selected
+                </p>
+
+                <div class="form-group">
+                    <button class="btn btn-primary" onclick="exportSelectedImages('csv'); this.closest('.modal').remove();" style="width: 100%; margin-bottom: var(--spacing-sm);">
+                        📊 Export to CSV
+                    </button>
+                    <button class="btn btn-primary" onclick="exportSelectedImages('json'); this.closest('.modal').remove();" style="width: 100%; margin-bottom: var(--spacing-sm);">
+                        📋 Export to JSON
+                    </button>
+                    <button class="btn btn-primary" onclick="exportSelectedImages('pdf'); this.closest('.modal').remove();" style="width: 100%;">
+                        📄 Generate PDF Catalog
+                    </button>
+                </div>
+
+                <div class="form-actions" style="margin-top: var(--spacing-lg);">
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+}
+
+// ============ Reverse Image Search ============
+
+async function openReverseSearchModal(imageId) {
+    try {
+        const response = await fetch(`/api/images/${imageId}/reverse-search`);
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            showToast('Failed to load search options', 'error');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'block';
+
+        const searchOptionsHTML = data.search_options.map(option => `
+            <div style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); background: var(--bg-tertiary);">
+                <div style="display: flex; align-items: start; gap: var(--spacing-md);">
+                    <div style="font-size: 32px; flex-shrink: 0;">${option.icon}</div>
+                    <div style="flex: 1;">
+                        <h3 style="margin: 0 0 var(--spacing-xs) 0; font-size: 16px; color: var(--text-primary);">
+                            ${escapeHtml(option.provider)}
+                        </h3>
+                        <p style="margin: 0 0 var(--spacing-sm) 0; color: var(--text-secondary); font-size: 14px;">
+                            ${escapeHtml(option.description)}
+                        </p>
+                        ${option.features ? `
+                            <div style="display: flex; flex-wrap: wrap; gap: var(--spacing-xs); margin-bottom: var(--spacing-sm);">
+                                ${option.features.map(feature => `
+                                    <span style="font-size: 11px; padding: 2px 8px; background: var(--bg-secondary); border-radius: var(--radius-sm); color: var(--text-secondary);">
+                                        ${escapeHtml(feature)}
+                                    </span>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                        ${option.download ? `
+                            <a href="${option.url}" download="${data.image_filename}" class="btn btn-primary" style="display: inline-block; text-decoration: none; margin-top: var(--spacing-sm);">
+                                💾 Download Image
+                            </a>
+                        ` : `
+                            <button class="btn btn-primary" onclick="window.open('${option.url}', '_blank')" style="margin-top: var(--spacing-sm);">
+                                🔗 Open ${escapeHtml(option.provider)}
+                            </button>
+                        `}
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        const copyrightTipsHTML = data.copyright_tips.map(tip => `
+            <li style="margin-bottom: var(--spacing-xs); color: var(--text-secondary);">${escapeHtml(tip)}</li>
+        `).join('');
+
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="this.parentElement.remove()"></div>
+            <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+                <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
+                <div class="modal-body">
+                    <h2>🔍 Reverse Image Search</h2>
+                    <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
+                        Find where this image appears online, discover its original source, and check copyright information.
+                    </p>
+
+                    <div style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--radius-md); margin-bottom: var(--spacing-lg);">
+                        <strong style="color: var(--text-primary);">Image:</strong> ${escapeHtml(data.image_filename)}
+                    </div>
+
+                    <h3 style="margin-bottom: var(--spacing-md);">Search Engines</h3>
+                    ${searchOptionsHTML}
+
+                    <details style="margin-top: var(--spacing-xl);">
+                        <summary style="cursor: pointer; font-weight: 600; color: var(--text-primary); margin-bottom: var(--spacing-md);">
+                            📋 Copyright & Usage Tips
+                        </summary>
+                        <div style="padding: var(--spacing-md); background: var(--bg-tertiary); border-radius: var(--radius-md); margin-top: var(--spacing-md);">
+                            <ul style="margin: 0; padding-left: var(--spacing-lg);">
+                                ${copyrightTipsHTML}
+                            </ul>
+                        </div>
+                    </details>
+
+                    <div class="form-actions" style="margin-top: var(--spacing-xl);">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+    } catch (error) {
+        console.error('Reverse search error:', error);
+        showToast('Failed to open reverse search', 'error');
+    }
 }
 
 console.log('AI Gallery initialized ✨');
