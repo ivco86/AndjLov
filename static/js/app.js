@@ -1264,6 +1264,9 @@ function updateModal() {
                     <button class="action-btn secondary" onclick="showOpenWithMenu(event, ${image.id}, '${image.media_type || 'image'}')">
                         🚀 Open With
                     </button>
+                    <button class="action-btn secondary" onclick="showExportMenu(event, ${image.id})">
+                        📄 Export
+                    </button>
                 </div>
             </div>
 
@@ -1542,6 +1545,7 @@ function attachEventListeners() {
     const batchTagBtn = document.getElementById('batchTagBtn');
     const batchNameBtn = document.getElementById('batchNameBtn');
     const batchAddToBoardBtn = document.getElementById('batchAddToBoardBtn');
+    const batchExportBtn = document.getElementById('batchExportBtn');
     const closeBatchBtn = document.getElementById('closeBatchBtn');
 
     if (selectAllBtn) selectAllBtn.addEventListener('click', selectAllImages);
@@ -1550,6 +1554,7 @@ function attachEventListeners() {
     if (batchTagBtn) batchTagBtn.addEventListener('click', batchTagImages);
     if (batchNameBtn) batchNameBtn.addEventListener('click', batchNameImages);
     if (batchAddToBoardBtn) batchAddToBoardBtn.addEventListener('click', batchAddImagesToBoard);
+    if (batchExportBtn) batchExportBtn.addEventListener('click', showBatchExportMenu);
     if (closeBatchBtn) closeBatchBtn.addEventListener('click', () => {
         if (state.selectionMode) {
             toggleSelectionMode();
@@ -1713,6 +1718,8 @@ function attachEventListeners() {
                     openRenameBoardModal(boardId);
                 } else if (action === 'merge') {
                     openMergeBoardModal(boardId);
+                } else if (action === 'export') {
+                    showBoardExportMenu(e, boardId);
                 } else if (action === 'delete') {
                     openDeleteBoardModal(boardId);
                 }
@@ -2963,6 +2970,411 @@ function createDuplicateCard(image) {
 function closeDuplicatesModal() {
     const modal = document.getElementById('duplicatesModal');
     if (modal) modal.style.display = 'none';
+}
+
+// ============ Export Functions ============
+
+function showExportMenu(event, imageId) {
+    event.stopPropagation();
+
+    const existingMenu = document.querySelector('.export-dropdown');
+    if (existingMenu) {
+        existingMenu.remove();
+        return;
+    }
+
+    const menu = document.createElement('div');
+    menu.className = 'export-dropdown';
+    menu.style.cssText = `
+        position: fixed;
+        top: ${event.clientY}px;
+        left: ${event.clientX}px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 10000;
+        min-width: 180px;
+    `;
+
+    menu.innerHTML = `
+        <div class="menu-item" onclick="exportSingleImage(${imageId}, 'csv')">
+            📊 Export to CSV
+        </div>
+        <div class="menu-item" onclick="exportSingleImage(${imageId}, 'json')">
+            📋 Export to JSON
+        </div>
+        <div class="menu-item" onclick="exportSingleImage(${imageId}, 'pdf')">
+            📄 Generate PDF
+        </div>
+    `;
+
+    document.body.appendChild(menu);
+
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu() {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        });
+    }, 100);
+}
+
+async function exportSingleImage(imageId, format) {
+    try {
+        showToast(`Preparing ${format.toUpperCase()} export...`, 'info');
+
+        let url, method, body;
+
+        if (format === 'csv') {
+            url = '/api/export/images/csv';
+            method = 'POST';
+            body = JSON.stringify({ image_ids: [imageId] });
+        } else if (format === 'json') {
+            url = '/api/export/images/json';
+            method = 'POST';
+            body = JSON.stringify({ image_ids: [imageId], include_summary: true });
+        } else if (format === 'pdf') {
+            url = '/api/export/images/pdf';
+            method = 'POST';
+            body = JSON.stringify({
+                image_ids: [imageId],
+                title: 'Image Catalog',
+                page_size: 'A4',
+                orientation: 'portrait'
+            });
+        }
+
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: body
+        });
+
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `export.${format}`;
+        if (contentDisposition) {
+            const matches = /filename="(.+?)"/.exec(contentDisposition);
+            if (matches) {
+                filename = matches[1];
+            }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast(`${format.toUpperCase()} exported successfully!`, 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed. Please try again.', 'error');
+    }
+}
+
+function showBoardExportMenu(event, boardId) {
+    event.stopPropagation();
+
+    const existingMenu = document.querySelector('.export-dropdown');
+    if (existingMenu) {
+        existingMenu.remove();
+        return;
+    }
+
+    const menu = document.createElement('div');
+    menu.className = 'export-dropdown';
+    menu.style.cssText = `
+        position: fixed;
+        top: ${event.clientY}px;
+        left: ${event.clientX}px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 10000;
+        min-width: 200px;
+    `;
+
+    menu.innerHTML = `
+        <div class="menu-item" onclick="exportBoard(${boardId}, 'csv')">
+            📊 Export to CSV
+        </div>
+        <div class="menu-item" onclick="exportBoard(${boardId}, 'json')">
+            📋 Export to JSON
+        </div>
+        <div class="menu-item" onclick="showBoardPDFOptions(${boardId})">
+            📄 Generate PDF Catalog
+        </div>
+    `;
+
+    document.body.appendChild(menu);
+
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu() {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        });
+    }, 100);
+}
+
+async function exportBoard(boardId, format) {
+    try {
+        showToast(`Preparing ${format.toUpperCase()} export...`, 'info');
+
+        const url = `/api/export/boards/${boardId}/${format}`;
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `board_export.${format}`;
+        if (contentDisposition) {
+            const matches = /filename="(.+?)"/.exec(contentDisposition);
+            if (matches) {
+                filename = matches[1];
+            }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast(`${format.toUpperCase()} exported successfully!`, 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed. Please try again.', 'error');
+    }
+}
+
+function showBoardPDFOptions(boardId) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+
+    modal.innerHTML = `
+        <div class="modal-overlay" onclick="this.parentElement.remove()"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
+            <div class="modal-body">
+                <h2>PDF Export Options</h2>
+
+                <div class="form-group">
+                    <label>Page Size</label>
+                    <select id="pdfPageSize" style="width: 100%; padding: var(--spacing-sm); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary);">
+                        <option value="A4">A4 (210 × 297 mm)</option>
+                        <option value="letter">Letter (8.5 × 11 in)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Orientation</label>
+                    <select id="pdfOrientation" style="width: 100%; padding: var(--spacing-sm); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary);">
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
+                    <button class="btn btn-primary" onclick="generateBoardPDF(${boardId})">Generate PDF</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+}
+
+async function generateBoardPDF(boardId) {
+    try {
+        const pageSize = document.getElementById('pdfPageSize').value;
+        const orientation = document.getElementById('pdfOrientation').value;
+
+        // Close the options modal
+        document.querySelector('.modal').remove();
+
+        showToast('Generating PDF catalog...', 'info');
+
+        const response = await fetch(`/api/export/boards/${boardId}/pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                page_size: pageSize,
+                orientation: orientation
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('PDF generation failed');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'catalog.pdf';
+        if (contentDisposition) {
+            const matches = /filename="(.+?)"/.exec(contentDisposition);
+            if (matches) {
+                filename = matches[1];
+            }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast('PDF catalog generated successfully!', 'success');
+    } catch (error) {
+        console.error('PDF generation error:', error);
+        showToast('PDF generation failed. Please try again.', 'error');
+    }
+}
+
+async function exportSelectedImages(format) {
+    const selectedImageIds = Array.from(state.selectedImages);
+
+    if (selectedImageIds.length === 0) {
+        showToast('No images selected', 'warning');
+        return;
+    }
+
+    try {
+        showToast(`Exporting ${selectedImageIds.length} images to ${format.toUpperCase()}...`, 'info');
+
+        let url, method, body;
+
+        if (format === 'csv') {
+            url = '/api/export/images/csv';
+            method = 'POST';
+            body = JSON.stringify({ image_ids: selectedImageIds });
+        } else if (format === 'json') {
+            url = '/api/export/images/json';
+            method = 'POST';
+            body = JSON.stringify({ image_ids: selectedImageIds, include_summary: true });
+        } else if (format === 'pdf') {
+            url = '/api/export/images/pdf';
+            method = 'POST';
+            body = JSON.stringify({
+                image_ids: selectedImageIds,
+                title: 'Selected Images',
+                subtitle: `${selectedImageIds.length} images`,
+                page_size: 'A4',
+                orientation: 'portrait'
+            });
+        }
+
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: body
+        });
+
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `export.${format}`;
+        if (contentDisposition) {
+            const matches = /filename="(.+?)"/.exec(contentDisposition);
+            if (matches) {
+                filename = matches[1];
+            }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast(`${format.toUpperCase()} exported successfully!`, 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed. Please try again.', 'error');
+    }
+}
+
+function showBatchExportMenu(event) {
+    if (state.selectedImages.size === 0) {
+        showToast('No images selected', 'warning');
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+
+    modal.innerHTML = `
+        <div class="modal-overlay" onclick="this.parentElement.remove()"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
+            <div class="modal-body">
+                <h2>Export Selected Images</h2>
+                <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
+                    ${state.selectedImages.size} image(s) selected
+                </p>
+
+                <div class="form-group">
+                    <button class="btn btn-primary" onclick="exportSelectedImages('csv'); this.closest('.modal').remove();" style="width: 100%; margin-bottom: var(--spacing-sm);">
+                        📊 Export to CSV
+                    </button>
+                    <button class="btn btn-primary" onclick="exportSelectedImages('json'); this.closest('.modal').remove();" style="width: 100%; margin-bottom: var(--spacing-sm);">
+                        📋 Export to JSON
+                    </button>
+                    <button class="btn btn-primary" onclick="exportSelectedImages('pdf'); this.closest('.modal').remove();" style="width: 100%;">
+                        📄 Generate PDF Catalog
+                    </button>
+                </div>
+
+                <div class="form-actions" style="margin-top: var(--spacing-lg);">
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
 }
 
 console.log('AI Gallery initialized ✨');
