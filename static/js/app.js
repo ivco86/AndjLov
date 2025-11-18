@@ -3548,4 +3548,44 @@ async function sendImageToTelegram(imageId) {
     // Future: API endpoint for sending images directly from UI
 }
 
+// ============ DARK MODE TOGGLE ============
+
+function toggleTheme() {
+    const html = document.documentElement;
+    const themeToggle = document.getElementById('themeToggle');
+
+    const currentTheme = html.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+    html.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+
+    // Update button icon
+    themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+
+    // Add smooth transition
+    html.style.transition = 'background-color 0.3s, color 0.3s';
+    setTimeout(() => {
+        html.style.transition = '';
+    }, 300);
+}
+
+// Load saved theme on page load
+function loadTheme() {
+    const html = document.documentElement;
+    const themeToggle = document.getElementById('themeToggle');
+    const savedTheme = localStorage.getItem('theme') || 'light';
+
+    html.setAttribute('data-theme', savedTheme);
+    if (themeToggle) {
+        themeToggle.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+    }
+}
+
+// Initialize theme
+loadTheme();
+
+// Event listener for theme toggle
+document.getElementById('themeToggle')?.addEventListener('click', toggleTheme);
+
 console.log('AI Gallery initialized ✨');

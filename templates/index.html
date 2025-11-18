@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
+    <!-- Dark/Light Mode Toggle -->
+    <button id="themeToggle" title="Toggle Dark/Light Mode" aria-label="Toggle theme">🌙</button>
+
     <!-- Header -->
     <header class="header">
         <div class="header-left">
@@ -1364,6 +1367,79 @@
             border-radius: var(--radius-md);
             padding: var(--spacing-md);
         }
+
+        /* Enhanced Lightbox */
+        .image-main-view img {
+            transition: transform 0.2s ease-out;
+            transform-origin: center center;
+            user-select: none;
+        }
+
+        #lightboxZoomControls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 25px;
+            z-index: 10001;
+        }
+
+        #lightboxZoomControls button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+
+        #lightboxZoomControls button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+
+        #lightboxZoomControls button:active {
+            transform: scale(0.95);
+        }
+
+        /* Dark Mode Toggle */
+        #themeToggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        #themeToggle:hover {
+            transform: scale(1.1);
+        }
+
+        /* Dark Mode Variables */
+        [data-theme="dark"] {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --text-color: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --border-color: #404040;
+            --primary-color: #64b5f6;
+            --success-color: #81c784;
+            --warning-color: #ffb74d;
+            --danger-color: #e57373;
+        }
     </style>
 
     <!-- Chart.js CDN -->
@@ -1373,5 +1449,6 @@
     <script src="/static/js/research.js"></script>
     <script src="/static/js/workflows.js"></script>
     <script src="/static/js/stats.js"></script>
+    <script src="/static/js/lightbox.js"></script>
 </body>
 </html>
