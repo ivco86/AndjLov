@@ -30,6 +30,44 @@ from database import Database
 from ai_service import AIService
 from privacy_service import get_privacy_service
 
+# Security helper function
+def is_safe_path(filepath, base_dir):
+    """
+    Validate that a filepath is within the base directory.
+    Handles Windows/Unix paths, symlinks, and relative paths.
+
+    Args:
+        filepath: The file path to validate
+        base_dir: The base directory that should contain the file
+
+    Returns:
+        Tuple of (is_safe: bool, resolved_path: str)
+    """
+    try:
+        # Normalize and resolve both paths to handle symlinks and relative paths
+        # os.path.realpath resolves symlinks and normalizes path separators
+        resolved_file = os.path.realpath(os.path.normpath(filepath))
+        resolved_base = os.path.realpath(os.path.normpath(base_dir))
+
+        # Ensure both use the same separator (important for cross-platform)
+        resolved_file = os.path.normcase(resolved_file)
+        resolved_base = os.path.normcase(resolved_base)
+
+        # Check if the resolved file path is within the base directory
+        # Use os.path.commonpath to ensure proper containment check
+        try:
+            common = os.path.commonpath([resolved_file, resolved_base])
+            is_safe = os.path.normcase(common) == resolved_base
+        except ValueError:
+            # Paths are on different drives (Windows) or completely unrelated
+            is_safe = False
+
+        return is_safe, resolved_file
+    except (ValueError, OSError) as e:
+        # Invalid path or other error
+        print(f"Path validation error: {e}")
+        return False, None
+
 # Helper functions for video processing
 def extract_video_frame(video_path, output_path, time_sec=1.0):
     """Extract a frame from video using opencv if available"""
@@ -368,7 +406,15 @@ def open_with_external_app(image_id):
             return jsonify({'error': 'Image not found'}), 404
 
         filepath = image['filepath']
-        if not os.path.exists(filepath):
+
+        # Security: Validate filepath is within PHOTOS_DIR
+        is_safe, resolved_path = is_safe_path(filepath, PHOTOS_DIR)
+
+        if not is_safe:
+            print(f"Security: Path traversal attempt blocked in open-with: {filepath}")
+            return jsonify({'error': 'Invalid file path'}), 403
+
+        if not os.path.exists(resolved_path):
             return jsonify({'error': 'File not found on disk'}), 404
 
         data = request.get_json() or {}
@@ -387,13 +433,10 @@ def open_with_external_app(image_id):
         if not app:
             return jsonify({'error': f'Application {app_id} not found for {media_type}'}), 404
 
-        # Get absolute path
-        abs_filepath = os.path.abspath(filepath)
-
         # Launch application in background
-        command = [app['command'], abs_filepath]
+        command = [app['command'], resolved_path]
 
-        print(f"[OPEN_WITH] Opening {abs_filepath} with {app['name']} ({app['command']})")
+        print(f"[OPEN_WITH] Opening {resolved_path} with {app['name']} ({app['command']})")
 
         # Start process in background (detached)
         subprocess.Popen(
@@ -600,21 +643,20 @@ def serve_image(image_id):
     filepath = image['filepath']
 
     # Security: Validate filepath is within PHOTOS_DIR
-    abs_filepath = os.path.abspath(filepath)
-    abs_photos_dir = os.path.abspath(PHOTOS_DIR)
+    is_safe, resolved_path = is_safe_path(filepath, PHOTOS_DIR)
 
-    if not abs_filepath.startswith(abs_photos_dir):
+    if not is_safe:
         print(f"Security: Path traversal attempt blocked: {filepath}")
         return jsonify({'error': 'Invalid file path'}), 403
 
-    if not os.path.exists(abs_filepath):
+    if not os.path.exists(resolved_path):
         return jsonify({'error': 'File not found on disk'}), 404
 
     # Additional check: ensure it's actually a file, not a directory
-    if not os.path.isfile(abs_filepath):
+    if not os.path.isfile(resolved_path):
         return jsonify({'error': 'Invalid file'}), 403
 
-    return send_file(abs_filepath, mimetype=mimetypes.guess_type(abs_filepath)[0])
+    return send_file(resolved_path, mimetype=mimetypes.guess_type(resolved_path)[0])
 
 @app.route('/api/images/<int:image_id>/thumbnail', methods=['GET'])
 def serve_thumbnail(image_id):
@@ -630,17 +672,16 @@ def serve_thumbnail(image_id):
     filepath = image['filepath']
 
     # Security: Validate filepath is within PHOTOS_DIR
-    abs_filepath = os.path.abspath(filepath)
-    abs_photos_dir = os.path.abspath(PHOTOS_DIR)
+    is_safe, resolved_path = is_safe_path(filepath, PHOTOS_DIR)
 
-    if not abs_filepath.startswith(abs_photos_dir):
+    if not is_safe:
         print(f"Security: Path traversal attempt blocked: {filepath}")
         return jsonify({'error': 'Invalid file path'}), 403
 
-    if not os.path.exists(abs_filepath):
+    if not os.path.exists(resolved_path):
         return jsonify({'error': 'File not found on disk'}), 404
 
-    if not os.path.isfile(abs_filepath):
+    if not os.path.isfile(resolved_path):
         return jsonify({'error': 'Invalid file'}), 403
 
     # Thumbnail caching
@@ -652,7 +693,7 @@ def serve_thumbnail(image_id):
 
     # Generate cache key from image ID, size, and modification time
     try:
-        mtime = int(os.path.getmtime(abs_filepath))
+        mtime = int(os.path.getmtime(resolved_path))
         cache_filename = f"{image_id}_{size}_{mtime}.jpg"
         cache_path = os.path.join(thumbnail_cache_dir, cache_filename)
 
@@ -663,14 +704,14 @@ def serve_thumbnail(image_id):
         # Generate and cache thumbnail
         if is_video:
             # Try to extract frame from video
-            img = extract_video_frame(abs_filepath, cache_path, time_sec=1.0)
+            img = extract_video_frame(resolved_path, cache_path, time_sec=1.0)
 
             if not img:
                 # Fallback to placeholder if opencv not available or extraction failed
                 img = create_video_placeholder(size)
         else:
             # Regular image processing
-            img = Image.open(abs_filepath)
+            img = Image.open(resolved_path)
 
         # Resize thumbnail
         img.thumbnail((size, size), Image.Resampling.LANCZOS)
@@ -700,7 +741,7 @@ def serve_thumbnail(image_id):
                 pass
 
         # Fallback to original file
-        return send_file(abs_filepath, mimetype=mimetypes.guess_type(abs_filepath)[0])
+        return send_file(resolved_path, mimetype=mimetypes.guess_type(resolved_path)[0])
 
 @app.route('/api/images/<int:image_id>/favorite', methods=['POST'])
 def toggle_favorite(image_id):
@@ -804,7 +845,14 @@ def analyze_image(image_id):
         filepath = image['filepath']
         media_type = image.get('media_type', 'image')
 
-        if not os.path.exists(filepath):
+        # Security: Validate filepath is within PHOTOS_DIR
+        is_safe, resolved_path = is_safe_path(filepath, PHOTOS_DIR)
+
+        if not is_safe:
+            print(f"Security: Path traversal attempt blocked in AI analyze: {filepath}")
+            return jsonify({'error': 'Invalid file path'}), 403
+
+        if not os.path.exists(resolved_path):
             return jsonify({'error': 'File not found on disk'}), 404
 
         # Check AI connection
@@ -818,12 +866,12 @@ def analyze_image(image_id):
         custom_prompt = data.get('custom_prompt', None)
 
         # For videos, extract frame first
-        analysis_path = filepath
+        analysis_path = resolved_path
         if media_type == 'video':
             print(f"[ANALYZE] Extracting frame from video {image_id} for AI analysis...")
 
             # Get frame as PIL Image
-            frame_img = get_image_for_analysis(filepath, media_type='video')
+            frame_img = get_image_for_analysis(resolved_path, media_type='video')
 
             if not frame_img:
                 return jsonify({'error': 'Could not extract frame from video for analysis'}), 500
@@ -1176,12 +1224,15 @@ def batch_analyze():
     for image in images:
         filepath = image['filepath']
         image_id = image['id']
-        
-        if not os.path.exists(filepath):
+
+        # Security: Validate filepath is within PHOTOS_DIR
+        is_safe, resolved_path = is_safe_path(filepath, PHOTOS_DIR)
+
+        if not is_safe or not os.path.exists(resolved_path):
             failed_count += 1
             continue
-        
-        result = ai.analyze_image(filepath)
+
+        result = ai.analyze_image(resolved_path)
         
         if result:
             # Update analysis
@@ -1422,13 +1473,20 @@ def analyze_image_privacy(image_id):
     # Get image path
     image_path = image['filepath']
 
-    if not os.path.exists(image_path):
+    # Security: Validate filepath is within PHOTOS_DIR
+    is_safe, resolved_path = is_safe_path(image_path, PHOTOS_DIR)
+
+    if not is_safe:
+        print(f"Security: Path traversal attempt blocked in privacy analyze: {image_path}")
+        return jsonify({'error': 'Invalid file path'}), 403
+
+    if not os.path.exists(resolved_path):
         return jsonify({'error': 'Image file not found'}), 404
 
     try:
         # Perform privacy analysis
         privacy_service = get_privacy_service()
-        result = privacy_service.analyze_image_privacy(image_path)
+        result = privacy_service.analyze_image_privacy(resolved_path)
 
         # Update database
         db.update_privacy_analysis(
@@ -1493,7 +1551,14 @@ def get_blurred_thumbnail(image_id):
 
     image_path = image['filepath']
 
-    if not os.path.exists(image_path):
+    # Security: Validate filepath is within PHOTOS_DIR
+    is_safe, resolved_path = is_safe_path(image_path, PHOTOS_DIR)
+
+    if not is_safe:
+        print(f"Security: Path traversal attempt blocked in blurred thumbnail: {image_path}")
+        return jsonify({'error': 'Invalid file path'}), 403
+
+    if not os.path.exists(resolved_path):
         return jsonify({'error': 'Image file not found'}), 404
 
     # Get privacy zones
@@ -1504,7 +1569,7 @@ def get_blurred_thumbnail(image_id):
         # Generate blurred thumbnail
         privacy_service = get_privacy_service()
         blurred_img = privacy_service.generate_privacy_thumbnail(
-            image_path,
+            resolved_path,
             zones,
             size=size,
             blur_strength=blur_strength
@@ -1546,15 +1611,25 @@ def batch_analyze_privacy():
         try:
             image = db.get_image(image_id)
 
-            if not image or not os.path.exists(image['filepath']):
+            if not image:
                 results['failed'].append({
                     'id': image_id,
                     'error': 'Image not found'
                 })
                 continue
 
+            # Security: Validate filepath is within PHOTOS_DIR
+            is_safe, resolved_path = is_safe_path(image['filepath'], PHOTOS_DIR)
+
+            if not is_safe or not os.path.exists(resolved_path):
+                results['failed'].append({
+                    'id': image_id,
+                    'error': 'Invalid or missing file'
+                })
+                continue
+
             # Analyze
-            result = privacy_service.analyze_image_privacy(image['filepath'])
+            result = privacy_service.analyze_image_privacy(resolved_path)
 
             # Update DB
             db.update_privacy_analysis(
