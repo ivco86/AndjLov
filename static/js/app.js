@@ -2187,16 +2187,18 @@ function hideLoading() {
     if (loadingState) loadingState.style.display = 'none';
 }
 
-function showToast(message, type = 'success') {
+function showToast(message, type = 'success', duration = null) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
-    
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.textContent = message;
-    
+
     container.appendChild(toast);
-    
+
+    const displayDuration = duration || CONFIG.TOAST_DURATION_MS;
+
     setTimeout(() => {
         toast.style.animation = 'slideOut 0.3s ease';
         setTimeout(() => {
@@ -2204,7 +2206,7 @@ function showToast(message, type = 'success') {
                 container.removeChild(toast);
             }
         }, 300);
-    }, CONFIG.TOAST_DURATION_MS);
+    }, displayDuration);
 }
 
 function formatFileSize(bytes) {
@@ -3522,7 +3524,7 @@ async function openReverseSearchModal(imageId) {
                                 💾 Download Image
                             </a>
                         ` : `
-                            <button class="btn btn-primary" onclick="window.open('${option.url}', '_blank')" style="margin-top: var(--spacing-sm);">
+                            <button class="btn btn-primary" onclick="openSearchAndDownload('${option.url}', '/api/images/${imageId}/file', '${escapeHtml(data.image_filename)}', '${escapeHtml(option.provider)}')" style="margin-top: var(--spacing-sm);">
                                 🔗 Open ${escapeHtml(option.provider)}
                             </button>
                         `}
@@ -3590,6 +3592,23 @@ async function openReverseSearchModal(imageId) {
         console.error('Reverse search error:', error);
         showToast('Failed to open reverse search', 'error');
     }
+}
+
+function openSearchAndDownload(searchUrl, imageUrl, filename, provider) {
+    // Open search engine in new tab
+    window.open(searchUrl, '_blank');
+
+    // Trigger download
+    const link = document.createElement('a');
+    link.href = imageUrl;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Show instructions
+    showToast(`📥 Image downloaded! Now drag and drop it to ${provider} or use their upload button.`, 'success', 6000);
 }
 
 async function openImageFolder(imageId) {
