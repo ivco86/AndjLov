@@ -29,14 +29,23 @@
         <div class="header-right">
             <button class="btn btn-primary" id="uploadBtn" aria-label="Upload images from your computer">📤 Upload</button>
             <button class="btn btn-primary" id="scanBtn" aria-label="Scan photos directory for new images">📂 Scan</button>
-            <button class="btn btn-secondary" id="sortImagesBtn" aria-label="Sort images">🔄 Sort</button>
-            <button class="btn btn-secondary" id="findDuplicatesBtn" aria-label="Find duplicate images">🔍 Find Duplicates</button>
             <button class="btn btn-secondary" id="analyzeBtn" aria-label="Analyze multiple images with AI">🤖 Analyze</button>
             <button class="btn btn-secondary" id="selectBtn" aria-label="Select multiple images">✓ Select</button>
-            <button class="btn btn-secondary" id="privacyBtn" aria-label="Privacy mode">🔒 Privacy</button>
-            <button class="btn btn-secondary" id="exportImportBtn" aria-label="Export/Import data">📦 Export/Import</button>
-            <button class="btn btn-secondary" id="researchBtn" aria-label="Research & Education">🎓 Research</button>
-            <button class="btn btn-secondary" id="workflowsBtn" aria-label="Workflow Automation">⚡ Workflows</button>
+
+            <!-- Advanced Tools Dropdown -->
+            <div style="position: relative; display: inline-block;">
+                <button class="btn btn-secondary" id="toolsMenuBtn" aria-label="Advanced tools">🛠️ Tools ▾</button>
+                <div id="toolsDropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 4px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--border-radius); box-shadow: 0 4px 12px rgba(0,0,0,0.3); min-width: 200px; z-index: 1000;">
+                    <button class="dropdown-item" id="sortImagesBtn" style="display: block; width: 100%; text-align: left; padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; color: var(--text-color);">🔄 Sort Images</button>
+                    <button class="dropdown-item" id="findDuplicatesBtn" style="display: block; width: 100%; text-align: left; padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; color: var(--text-color);">🔍 Find Duplicates</button>
+                    <div style="border-top: 1px solid var(--border-color); margin: var(--spacing-xs) 0;"></div>
+                    <button class="dropdown-item" id="privacyBtn" style="display: block; width: 100%; text-align: left; padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; color: var(--text-color);">🔒 Privacy & Protection</button>
+                    <button class="dropdown-item" id="researchBtn" style="display: block; width: 100%; text-align: left; padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; color: var(--text-color);">🎓 Research & Education</button>
+                    <button class="dropdown-item" id="workflowsBtn" style="display: block; width: 100%; text-align: left; padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; color: var(--text-color);">⚡ Workflow Automation</button>
+                    <button class="dropdown-item" id="exportImportBtn" style="display: block; width: 100%; text-align: left; padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; color: var(--text-color);">📦 Export/Import Data</button>
+                </div>
+            </div>
+
             <button class="btn btn-secondary" id="settingsBtn" aria-label="Open settings">⚙️ Settings</button>
         </div>
     </header>

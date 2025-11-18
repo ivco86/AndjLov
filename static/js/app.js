@@ -1261,6 +1261,9 @@ function updateModal() {
                     <button class="action-btn secondary" onclick="openAddToBoardModal()">
                         📋 Boards
                     </button>
+                    <button class="action-btn secondary" onclick="sendImageToTelegram(${image.id})">
+                        📱 Send to Telegram
+                    </button>
                     <button class="action-btn secondary" onclick="showOpenWithMenu(event, ${image.id}, '${image.media_type || 'image'}')">
                         🚀 Open With
                     </button>
@@ -3276,5 +3279,163 @@ document.getElementById('privacyModeEnabled')?.addEventListener('change', (e) =>
         'success'
     );
 });
+
+// ============ TOOLS DROPDOWN MENU ============
+
+const toolsMenuBtn = document.getElementById('toolsMenuBtn');
+const toolsDropdown = document.getElementById('toolsDropdown');
+
+if (toolsMenuBtn && toolsDropdown) {
+    // Toggle dropdown
+    toolsMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = toolsDropdown.style.display === 'block';
+        toolsDropdown.style.display = isVisible ? 'none' : 'block';
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!toolsMenuBtn.contains(e.target) && !toolsDropdown.contains(e.target)) {
+            toolsDropdown.style.display = 'none';
+        }
+    });
+
+    // Hover effects for dropdown items
+    const dropdownItems = toolsDropdown.querySelectorAll('.dropdown-item');
+    dropdownItems.forEach(item => {
+        item.addEventListener('mouseenter', () => {
+            item.style.background = 'var(--bg-tertiary)';
+        });
+        item.addEventListener('mouseleave', () => {
+            item.style.background = 'none';
+        });
+        item.addEventListener('click', () => {
+            toolsDropdown.style.display = 'none';
+        });
+    });
+}
+
+// ============ BOARD DRAG & DROP (for sub-boards) ============
+
+function enableBoardDragDrop() {
+    const boardsList = document.getElementById('boardsList');
+    if (!boardsList) return;
+
+    let draggedBoard = null;
+
+    // Add dragstart listener to all board pills
+    boardsList.addEventListener('dragstart', (e) => {
+        const boardPill = e.target.closest('.board-pill[data-board-id]');
+        if (boardPill) {
+            draggedBoard = parseInt(boardPill.dataset.boardId);
+            e.dataTransfer.effectAllowed = 'move';
+            boardPill.style.opacity = '0.5';
+        }
+    });
+
+    // Add dragend listener
+    boardsList.addEventListener('dragend', (e) => {
+        const boardPill = e.target.closest('.board-pill[data-board-id]');
+        if (boardPill) {
+            boardPill.style.opacity = '1';
+        }
+    });
+
+    // Add dragover listener
+    boardsList.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const boardPill = e.target.closest('.board-pill[data-board-id]');
+        if (boardPill && draggedBoard) {
+            const targetBoardId = parseInt(boardPill.dataset.boardId);
+            if (draggedBoard !== targetBoardId) {
+                boardPill.style.background = 'var(--primary-color)';
+                boardPill.style.opacity = '0.7';
+            }
+        }
+    });
+
+    // Add dragleave listener
+    boardsList.addEventListener('dragleave', (e) => {
+        const boardPill = e.target.closest('.board-pill[data-board-id]');
+        if (boardPill) {
+            boardPill.style.background = '';
+            boardPill.style.opacity = '1';
+        }
+    });
+
+    // Add drop listener
+    boardsList.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        const boardPill = e.target.closest('.board-pill[data-board-id]');
+
+        if (boardPill && draggedBoard) {
+            const targetBoardId = parseInt(boardPill.dataset.boardId);
+
+            // Reset styles
+            boardPill.style.background = '';
+            boardPill.style.opacity = '1';
+
+            if (draggedBoard !== targetBoardId) {
+                // Ask for confirmation
+                if (confirm(`Move board to become a sub-board of the target board?`)) {
+                    await makeBoardSubBoard(draggedBoard, targetBoardId);
+                }
+            }
+        }
+
+        draggedBoard = null;
+    });
+
+    // Make board pills draggable
+    const updateBoardsDraggable = () => {
+        const pills = boardsList.querySelectorAll('.board-pill[data-board-id]');
+        pills.forEach(pill => {
+            pill.setAttribute('draggable', 'true');
+        });
+    };
+
+    // Call initially and after board list updates
+    updateBoardsDraggable();
+
+    // Observe for changes in boards list
+    const observer = new MutationObserver(updateBoardsDraggable);
+    observer.observe(boardsList, { childList: true, subtree: true });
+}
+
+async function makeBoardSubBoard(boardId, newParentId) {
+    try {
+        const response = await fetch(`/api/boards/${boardId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                parent_id: newParentId
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showMessage('Board moved to sub-board!', 'success');
+            await loadBoards();
+        } else {
+            showMessage('Error: ' + data.error, 'error');
+        }
+    } catch (error) {
+        console.error('Error moving board:', error);
+        showMessage('Error moving board', 'error');
+    }
+}
+
+// Initialize board drag & drop after boards are loaded
+setTimeout(() => {
+    enableBoardDragDrop();
+}, 1000);
+
+// ============ SEND TO TELEGRAM ============
+
+async function sendImageToTelegram(imageId) {
+    showMessage('Telegram integration: Please configure your Telegram bot in Settings first. Then you can send images via the bot commands.', 'info');
+    // Future: API endpoint for sending images directly from UI
+}
 
 console.log('AI Gallery initialized ✨');
