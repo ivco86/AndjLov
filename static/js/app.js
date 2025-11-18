@@ -2682,7 +2682,7 @@ function openSettingsModal() {
 
     loadBotStatus();
     loadBotConfig();
-    loadExternalApps();
+    loadExternalAppsForSettings();
 }
 
 function closeSettingsModal() {
@@ -3658,11 +3658,15 @@ async function openImageFolder(imageId) {
 
 // ============ External Apps Management ============
 
-async function loadExternalApps() {
+async function loadExternalAppsForSettings() {
     try {
         const response = await fetch('/api/external-apps');
         const data = await response.json();
 
+        // Update state for Open With menus
+        state.externalApps = data.apps;
+
+        // Update Settings UI
         renderAppsList('image', data.apps.image || []);
         renderAppsList('video', data.apps.video || []);
     } catch (error) {
@@ -3764,7 +3768,7 @@ async function deleteApp(mediaType, appId) {
 
         if (response.ok && data.success) {
             showToast('Application deleted', 'success');
-            loadExternalApps();
+            loadExternalAppsForSettings();
         } else {
             showToast(data.error || 'Failed to delete application', 'error');
         }
@@ -3819,7 +3823,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast(editId ? 'Application updated' : 'Application added', 'success');
                     document.getElementById('addAppModal').style.display = 'none';
                     document.getElementById('appId').readOnly = false; // Reset readonly
-                    loadExternalApps();
+                    loadExternalAppsForSettings();
                 } else {
                     showToast(data.error || 'Failed to save application', 'error');
                 }
