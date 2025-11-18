@@ -1258,6 +1258,9 @@ function updateModal() {
                     <button class="action-btn secondary" onclick="editImage(${image.id})">
                         ✏️ Edit
                     </button>
+                    <button class="action-btn secondary" onclick="openImageFolder(${image.id})">
+                        📁 Open Folder
+                    </button>
                     <button class="action-btn secondary" onclick="openAddToBoardModal()">
                         📋 Boards
                     </button>
@@ -3543,7 +3546,22 @@ async function openReverseSearchModal(imageId) {
                     </p>
 
                     <div style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--radius-md); margin-bottom: var(--spacing-lg);">
-                        <strong style="color: var(--text-primary);">Image:</strong> ${escapeHtml(data.image_filename)}
+                        <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+                            <img src="/api/images/${imageId}/thumbnail?size=200"
+                                 alt="${escapeHtml(data.image_filename)}"
+                                 style="width: 150px; height: 150px; object-fit: cover; border-radius: var(--radius-sm);">
+                            <div style="flex: 1;">
+                                <strong style="color: var(--text-primary); display: block; margin-bottom: var(--spacing-sm);">
+                                    ${escapeHtml(data.image_filename)}
+                                </strong>
+                                <button class="btn btn-secondary btn-sm" onclick="openImageFolder(${imageId})" style="margin-bottom: var(--spacing-xs);">
+                                    📁 Open Folder
+                                </button>
+                                <a href="/api/images/${imageId}/file" download="${escapeHtml(data.image_filename)}" class="btn btn-secondary btn-sm" style="display: inline-block; text-decoration: none;">
+                                    💾 Download
+                                </a>
+                            </div>
+                        </div>
                     </div>
 
                     <h3 style="margin-bottom: var(--spacing-md);">Search Engines</h3>
@@ -3571,6 +3589,25 @@ async function openReverseSearchModal(imageId) {
     } catch (error) {
         console.error('Reverse search error:', error);
         showToast('Failed to open reverse search', 'error');
+    }
+}
+
+async function openImageFolder(imageId) {
+    try {
+        const response = await fetch(`/api/images/${imageId}/open-folder`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            showToast('Folder opened', 'success');
+        } else {
+            showToast(data.error || 'Failed to open folder', 'error');
+        }
+    } catch (error) {
+        console.error('Error opening folder:', error);
+        showToast('Failed to open folder', 'error');
     }
 }
 
