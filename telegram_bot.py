@@ -157,6 +157,47 @@ class TelegramGalleryBot:
         
         return image_id
 
+    async def send_photo_to_chat(self, chat_id: int, filepath: str, caption: str = None):
+        """
+        Send a photo from the gallery to a Telegram chat
+
+        Args:
+            chat_id: Telegram chat ID (group or user)
+            filepath: Path to the photo file
+            caption: Optional caption for the photo
+
+        Returns:
+            dict: Result with success status and message
+        """
+        try:
+            if not os.path.exists(filepath):
+                return {'success': False, 'error': 'File not found'}
+
+            # Check if file is an image
+            ext = Path(filepath).suffix.lower()
+            if ext not in IMAGE_EXTENSIONS:
+                return {'success': False, 'error': 'Not a valid image file'}
+
+            # Send photo using the application's bot
+            with open(filepath, 'rb') as photo_file:
+                message = await self.app.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo_file,
+                    caption=caption,
+                    parse_mode='Markdown' if caption else None
+                )
+
+            logger.info(f"Photo sent to chat {chat_id}: {filepath}")
+            return {
+                'success': True,
+                'message_id': message.message_id,
+                'chat_id': chat_id
+            }
+
+        except Exception as e:
+            logger.error(f"Error sending photo to chat {chat_id}: {e}", exc_info=True)
+            return {'success': False, 'error': str(e)}
+
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
         chat_id = update.effective_chat.id

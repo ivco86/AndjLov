@@ -18,6 +18,15 @@ import atexit
 import threading
 import time
 import io
+import asyncio
+
+# Try to import telegram library for sending photos
+try:
+    from telegram import Bot
+    HAS_TELEGRAM = True
+except ImportError:
+    HAS_TELEGRAM = False
+    print("Warning: python-telegram-bot not installed. Telegram photo sending will be disabled.")
 
 # Try to import opencv for video frame extraction
 try:
@@ -687,6 +696,96 @@ def telegram_logs():
         return jsonify({
             'error': str(e),
             'logs': ''
+        }), 500
+
+@app.route('/api/telegram/send-photo', methods=['POST'])
+def telegram_send_photo():
+    """Send a photo from gallery to Telegram chat"""
+    if not HAS_TELEGRAM:
+        return jsonify({
+            'success': False,
+            'error': 'Telegram library not installed'
+        }), 500
+
+    data = request.json
+    image_id = data.get('image_id')
+    chat_id = data.get('chat_id')
+    caption = data.get('caption', '')
+
+    if not image_id:
+        return jsonify({
+            'success': False,
+            'error': 'image_id is required'
+        }), 400
+
+    if not chat_id:
+        return jsonify({
+            'success': False,
+            'error': 'chat_id is required'
+        }), 400
+
+    # Get bot token
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    if not bot_token and os.path.exists(telegram_bot_config_path):
+        with open(telegram_bot_config_path, 'r') as f:
+            for line in f:
+                if line.startswith('TELEGRAM_BOT_TOKEN='):
+                    bot_token = line.split('=', 1)[1].strip()
+                    break
+
+    if not bot_token:
+        return jsonify({
+            'success': False,
+            'error': 'TELEGRAM_BOT_TOKEN not configured'
+        }), 400
+
+    # Get image from database
+    image = db.get_image(image_id)
+    if not image:
+        return jsonify({
+            'success': False,
+            'error': 'Image not found'
+        }), 404
+
+    filepath = image['filepath']
+    if not os.path.exists(filepath):
+        return jsonify({
+            'success': False,
+            'error': 'Image file not found on disk'
+        }), 404
+
+    # Send photo using Telegram Bot API
+    try:
+        async def send_photo_async():
+            bot = Bot(token=bot_token)
+            with open(filepath, 'rb') as photo_file:
+                message = await bot.send_photo(
+                    chat_id=int(chat_id),
+                    photo=photo_file,
+                    caption=caption if caption else None,
+                    parse_mode='Markdown' if caption else None
+                )
+            return message
+
+        # Run async function in event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            message = loop.run_until_complete(send_photo_async())
+            return jsonify({
+                'success': True,
+                'message_id': message.message_id,
+                'chat_id': message.chat_id,
+                'file_sent': os.path.basename(filepath)
+            })
+        finally:
+            loop.close()
+
+    except Exception as e:
+        print(f"❌ Error sending photo to Telegram: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
         }), 500
 
 # ============ IMAGE API ============
