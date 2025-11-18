@@ -2663,6 +2663,164 @@ def sync_to_cloud():
         print(f"Error syncing to cloud: {e}")
         return jsonify({'error': str(e)}), 500
 
+# ============ STATS & ANALYTICS ============
+
+@app.route('/api/stats/overview', methods=['GET'])
+def get_stats_overview():
+    """Get overview statistics"""
+    try:
+        # Get total counts
+        all_images = db.get_all_images(limit=100000)
+        total_images = len(all_images)
+
+        favorites = [img for img in all_images if img.get('is_favorite')]
+        analyzed = [img for img in all_images if img.get('analyzed_at')]
+        with_faces = [img for img in all_images if img.get('has_faces')]
+
+        # Calculate total storage
+        total_size = sum(img.get('file_size', 0) for img in all_images)
+
+        # Get boards count
+        boards = db.get_all_boards()
+
+        # Get tags distribution
+        all_tags = {}
+        for img in all_images:
+            tags = json.loads(img.get('tags', '[]'))
+            for tag in tags:
+                all_tags[tag] = all_tags.get(tag, 0) + 1
+
+        top_tags = sorted(all_tags.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_images': total_images,
+                'favorites': len(favorites),
+                'analyzed': len(analyzed),
+                'with_faces': len(with_faces),
+                'total_size_bytes': total_size,
+                'total_size_mb': round(total_size / 1024 / 1024, 2),
+                'total_boards': len(boards),
+                'total_tags': len(all_tags),
+                'top_tags': [{'tag': tag, 'count': count} for tag, count in top_tags]
+            }
+        })
+    except Exception as e:
+        print(f"Error getting stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/stats/timeline', methods=['GET'])
+def get_timeline_stats():
+    """Get timeline statistics (images per day/month)"""
+    try:
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+
+        all_images = db.get_all_images(limit=100000)
+
+        # Group by date
+        by_day = defaultdict(int)
+        by_month = defaultdict(int)
+        by_year = defaultdict(int)
+
+        for img in all_images:
+            created_at = img.get('created_at')
+            if created_at:
+                try:
+                    dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    by_day[dt.strftime('%Y-%m-%d')] += 1
+                    by_month[dt.strftime('%Y-%m')] += 1
+                    by_year[dt.strftime('%Y')] += 1
+                except:
+                    pass
+
+        # Convert to sorted lists
+        timeline_daily = [{'date': date, 'count': count} for date, count in sorted(by_day.items())]
+        timeline_monthly = [{'month': month, 'count': count} for month, count in sorted(by_month.items())]
+        timeline_yearly = [{'year': year, 'count': count} for year, count in sorted(by_year.items())]
+
+        return jsonify({
+            'success': True,
+            'timeline': {
+                'daily': timeline_daily[-90:],  # Last 90 days
+                'monthly': timeline_monthly[-24:],  # Last 24 months
+                'yearly': timeline_yearly
+            }
+        })
+    except Exception as e:
+        print(f"Error getting timeline stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/stats/storage', methods=['GET'])
+def get_storage_stats():
+    """Get storage statistics by type"""
+    try:
+        all_images = db.get_all_images(limit=100000)
+
+        # Group by media type
+        by_type = {}
+        for img in all_images:
+            media_type = img.get('media_type', 'image')
+            if media_type not in by_type:
+                by_type[media_type] = {'count': 0, 'size': 0}
+
+            by_type[media_type]['count'] += 1
+            by_type[media_type]['size'] += img.get('file_size', 0)
+
+        # Convert to list
+        storage_by_type = [
+            {
+                'type': media_type,
+                'count': data['count'],
+                'size_mb': round(data['size'] / 1024 / 1024, 2)
+            }
+            for media_type, data in by_type.items()
+        ]
+
+        return jsonify({
+            'success': True,
+            'storage': storage_by_type
+        })
+    except Exception as e:
+        print(f"Error getting storage stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/stats/activity', methods=['GET'])
+def get_activity_stats():
+    """Get recent activity statistics"""
+    try:
+        from datetime import datetime, timedelta
+
+        # Get images from last 7 days
+        all_images = db.get_all_images(limit=100000)
+        now = datetime.now()
+
+        recent_images = []
+        for img in all_images:
+            created_at = img.get('created_at')
+            if created_at:
+                try:
+                    dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    if (now - dt).days <= 7:
+                        recent_images.append(img)
+                except:
+                    pass
+
+        # Get recent pipeline executions
+        recent_executions = db.get_recent_executions(limit=20)
+
+        return jsonify({
+            'success': True,
+            'activity': {
+                'images_last_7_days': len(recent_images),
+                'recent_executions': recent_executions[:5]
+            }
+        })
+    except Exception as e:
+        print(f"Error getting activity stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # ============ STATIC FILES ============
 
 @app.route('/favicon.ico')

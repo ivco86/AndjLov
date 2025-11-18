@@ -36,6 +36,8 @@
             <div style="position: relative; display: inline-block;">
                 <button class="btn btn-secondary" id="toolsMenuBtn" aria-label="Advanced tools">🛠️ Tools ▾</button>
                 <div id="toolsDropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 4px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--border-radius); box-shadow: 0 4px 12px rgba(0,0,0,0.3); min-width: 200px; z-index: 1000;">
+                    <button class="dropdown-item" id="statsBtn" style="display: block; width: 100%; text-align: left; padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; color: var(--text-color);">📊 Statistics Dashboard</button>
+                    <div style="border-top: 1px solid var(--border-color); margin: var(--spacing-xs) 0;"></div>
                     <button class="dropdown-item" id="sortImagesBtn" style="display: block; width: 100%; text-align: left; padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; color: var(--text-color);">🔄 Sort Images</button>
                     <button class="dropdown-item" id="findDuplicatesBtn" style="display: block; width: 100%; text-align: left; padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; color: var(--text-color);">🔍 Find Duplicates</button>
                     <div style="border-top: 1px solid var(--border-color); margin: var(--spacing-xs) 0;"></div>
@@ -1255,8 +1257,121 @@
         </div>
     </div>
 
+    <!-- Stats Dashboard Modal -->
+    <div class="modal" id="statsModal" style="display: none;">
+        <div class="modal-overlay" id="statsOverlay"></div>
+        <div class="modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
+            <button class="modal-close" id="statsClose" aria-label="Close stats">&times;</button>
+
+            <div class="modal-body">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg);">
+                    <h2>📊 Statistics Dashboard</h2>
+                    <button class="btn btn-sm btn-secondary" onclick="refreshStats()">🔄 Refresh</button>
+                </div>
+
+                <!-- Overview Stats Cards -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--spacing-md); margin-bottom: var(--spacing-xl);">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Images</div>
+                        <div class="stat-value" id="statTotalImages">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">❤️ Favorites</div>
+                        <div class="stat-value" id="statFavorites">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">🤖 Analyzed</div>
+                        <div class="stat-value" id="statAnalyzed">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">💾 Storage</div>
+                        <div class="stat-value" id="statStorage">0 MB</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">📁 Boards</div>
+                        <div class="stat-value" id="statBoards">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">🏷️ Tags</div>
+                        <div class="stat-value" id="statTags">0</div>
+                    </div>
+                </div>
+
+                <!-- Charts Grid -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: var(--spacing-lg);">
+                    <!-- Timeline Chart -->
+                    <div class="chart-container">
+                        <h3 style="margin-bottom: var(--spacing-md);">📈 Timeline</h3>
+                        <div style="height: 300px;">
+                            <canvas id="timelineChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Tags Chart -->
+                    <div class="chart-container">
+                        <h3 style="margin-bottom: var(--spacing-md);">🏷️ Top Tags</h3>
+                        <div style="height: 300px;">
+                            <canvas id="tagsChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Storage Chart -->
+                    <div class="chart-container">
+                        <h3 style="margin-bottom: var(--spacing-md);">💾 Storage Distribution</h3>
+                        <div style="height: 300px;">
+                            <canvas id="storageChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Activity Stats -->
+                    <div class="chart-container">
+                        <h3 style="margin-bottom: var(--spacing-md);">⚡ Recent Activity</h3>
+                        <div class="stat-card" style="margin-bottom: var(--spacing-md);">
+                            <div class="stat-label">Last 7 Days</div>
+                            <div class="stat-value" id="statRecentImages">0</div>
+                        </div>
+                        <div id="recentExecutionsList" style="max-height: 200px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-md);
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            margin-bottom: var(--spacing-xs);
+        }
+
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .chart-container {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-md);
+        }
+    </style>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
     <script src="/static/js/app.js"></script>
     <script src="/static/js/research.js"></script>
     <script src="/static/js/workflows.js"></script>
+    <script src="/static/js/stats.js"></script>
 </body>
 </html>
