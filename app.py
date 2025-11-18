@@ -1613,8 +1613,8 @@ def board_detail(board_id):
         })
     
     elif request.method == 'DELETE':
-        data = request.json or {}
-        delete_sub_boards = data.get('delete_sub_boards', False)
+        # Read from query parameters
+        delete_sub_boards = request.args.get('delete_sub_boards', 'false').lower() == 'true'
 
         db.delete_board(board_id, delete_sub_boards=delete_sub_boards)
 
