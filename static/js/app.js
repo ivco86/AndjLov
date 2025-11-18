@@ -2187,16 +2187,18 @@ function hideLoading() {
     if (loadingState) loadingState.style.display = 'none';
 }
 
-function showToast(message, type = 'success') {
+function showToast(message, type = 'success', duration = null) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
-    
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.textContent = message;
-    
+
     container.appendChild(toast);
-    
+
+    const displayDuration = duration || CONFIG.TOAST_DURATION_MS;
+
     setTimeout(() => {
         toast.style.animation = 'slideOut 0.3s ease';
         setTimeout(() => {
@@ -2204,7 +2206,7 @@ function showToast(message, type = 'success') {
                 container.removeChild(toast);
             }
         }, 300);
-    }, CONFIG.TOAST_DURATION_MS);
+    }, displayDuration);
 }
 
 function formatFileSize(bytes) {
@@ -2284,13 +2286,38 @@ function populateUploadBoardSelect() {
 
     firstOptions.forEach(opt => select.add(opt));
 
-    // Add existing boards
-    state.boards.forEach(board => {
+    // Get all boards including subboards with full paths
+    const allBoards = getAllBoardsFlat();
+
+    // Add existing boards with hierarchical display
+    allBoards.forEach(({ board, path, level }) => {
         const option = document.createElement('option');
         option.value = board.id;
-        option.textContent = board.name;
+        // Add indentation for subboards
+        const indent = '  '.repeat(level);
+        option.textContent = indent + (path ? path + ' / ' + board.name : board.name);
         select.add(option);
     });
+}
+
+// Helper function to get all boards in flat list with hierarchy info
+function getAllBoardsFlat() {
+    const result = [];
+
+    function traverse(boards, parentPath = '', level = 0) {
+        boards.forEach(board => {
+            const currentPath = parentPath;
+            result.push({ board, path: currentPath, level });
+
+            if (board.subboards && board.subboards.length > 0) {
+                const newPath = parentPath ? `${parentPath} / ${board.name}` : board.name;
+                traverse(board.subboards, newPath, level + 1);
+            }
+        });
+    }
+
+    traverse(state.boards);
+    return result;
 }
 
 function removeUploadFile(index) {
@@ -2655,6 +2682,7 @@ function openSettingsModal() {
 
     loadBotStatus();
     loadBotConfig();
+    loadExternalAppsForSettings();
 }
 
 function closeSettingsModal() {
@@ -3522,7 +3550,7 @@ async function openReverseSearchModal(imageId) {
                                 💾 Download Image
                             </a>
                         ` : `
-                            <button class="btn btn-primary" onclick="window.open('${option.url}', '_blank')" style="margin-top: var(--spacing-sm);">
+                            <button class="btn btn-primary" onclick="openSearchAndDownload('${option.url}', '/api/images/${imageId}/file', '${escapeHtml(data.image_filename)}', '${escapeHtml(option.provider)}')" style="margin-top: var(--spacing-sm);">
                                 🔗 Open ${escapeHtml(option.provider)}
                             </button>
                         `}
@@ -3592,6 +3620,23 @@ async function openReverseSearchModal(imageId) {
     }
 }
 
+function openSearchAndDownload(searchUrl, imageUrl, filename, provider) {
+    // Open search engine in new tab
+    window.open(searchUrl, '_blank');
+
+    // Trigger download
+    const link = document.createElement('a');
+    link.href = imageUrl;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Show instructions
+    showToast(`📥 Image downloaded! Now drag and drop it to ${provider} or use their upload button.`, 'success', 6000);
+}
+
 async function openImageFolder(imageId) {
     try {
         const response = await fetch(`/api/images/${imageId}/open-folder`, {
@@ -3610,5 +3655,184 @@ async function openImageFolder(imageId) {
         showToast('Failed to open folder', 'error');
     }
 }
+
+// ============ External Apps Management ============
+
+async function loadExternalAppsForSettings() {
+    try {
+        const response = await fetch('/api/external-apps');
+        const data = await response.json();
+
+        // Update state for Open With menus
+        state.externalApps = data.apps;
+
+        // Update Settings UI
+        renderAppsList('image', data.apps.image || []);
+        renderAppsList('video', data.apps.video || []);
+    } catch (error) {
+        console.error('Error loading external apps:', error);
+    }
+}
+
+function renderAppsList(mediaType, apps) {
+    const container = document.getElementById(`${mediaType}AppsList`);
+    if (!container) return;
+
+    if (apps.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); font-style: italic;">No applications configured</p>';
+        return;
+    }
+
+    container.innerHTML = apps.map(app => `
+        <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--spacing-sm); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); background: var(--bg-tertiary);">
+            <div style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: var(--spacing-xs); margin-bottom: 2px;">
+                    <strong style="color: var(--text-primary);">${escapeHtml(app.name)}</strong>
+                    ${app.enabled ? '<span style="color: var(--success); font-size: 12px;">✓ Enabled</span>' : '<span style="color: var(--text-muted); font-size: 12px;">✗ Disabled</span>'}
+                </div>
+                <div style="font-size: 12px; color: var(--text-secondary);">
+                    ${app.path ? `Path: ${escapeHtml(app.path)}` : `Command: ${escapeHtml(app.command)}`}
+                </div>
+            </div>
+            <div style="display: flex; gap: var(--spacing-xs);">
+                <button class="btn btn-sm btn-secondary" onclick="editApp('${mediaType}', '${escapeHtml(app.id)}')" title="Edit">
+                    ✏️
+                </button>
+                ${app.id !== 'system' ? `
+                    <button class="btn btn-sm btn-danger" onclick="deleteApp('${mediaType}', '${escapeHtml(app.id)}')" title="Delete">
+                        🗑️
+                    </button>
+                ` : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+function showAddAppModal(mediaType) {
+    const modal = document.getElementById('addAppModal');
+    const title = document.getElementById('addAppModalTitle');
+    const form = document.getElementById('addAppForm');
+
+    // Reset form
+    form.reset();
+    document.getElementById('appMediaType').value = mediaType;
+    document.getElementById('appEditId').value = '';
+    document.getElementById('appEnabled').checked = true;
+
+    title.textContent = `Add ${mediaType === 'image' ? 'Image Editor' : 'Video Player'}`;
+    modal.style.display = 'block';
+}
+
+async function editApp(mediaType, appId) {
+    try {
+        const response = await fetch('/api/external-apps');
+        const data = await response.json();
+
+        const app = data.apps[mediaType]?.find(a => a.id === appId);
+        if (!app) {
+            showToast('Application not found', 'error');
+            return;
+        }
+
+        const modal = document.getElementById('addAppModal');
+        const title = document.getElementById('addAppModalTitle');
+
+        document.getElementById('appMediaType').value = mediaType;
+        document.getElementById('appEditId').value = appId;
+        document.getElementById('appName').value = app.name;
+        document.getElementById('appId').value = app.id;
+        document.getElementById('appId').readOnly = true; // Can't change ID when editing
+        document.getElementById('appPath').value = app.path || '';
+        document.getElementById('appCommand').value = app.command;
+        document.getElementById('appEnabled').checked = app.enabled !== false;
+
+        title.textContent = `Edit ${app.name}`;
+        modal.style.display = 'block';
+    } catch (error) {
+        console.error('Error loading app for editing:', error);
+        showToast('Failed to load application', 'error');
+    }
+}
+
+async function deleteApp(mediaType, appId) {
+    if (!confirm(`Are you sure you want to delete this application?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/settings/external-apps/${mediaType}/${appId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            showToast('Application deleted', 'success');
+            loadExternalAppsForSettings();
+        } else {
+            showToast(data.error || 'Failed to delete application', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting app:', error);
+        showToast('Failed to delete application', 'error');
+    }
+}
+
+// Add App Form Handler
+document.addEventListener('DOMContentLoaded', () => {
+    const addAppForm = document.getElementById('addAppForm');
+    if (addAppForm) {
+        addAppForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const mediaType = document.getElementById('appMediaType').value;
+            const editId = document.getElementById('appEditId').value;
+            const appData = {
+                id: document.getElementById('appId').value,
+                name: document.getElementById('appName').value,
+                path: document.getElementById('appPath').value,
+                command: document.getElementById('appCommand').value,
+                enabled: document.getElementById('appEnabled').checked
+            };
+
+            try {
+                let response;
+
+                if (editId) {
+                    // Update existing app
+                    response = await fetch(`/api/settings/external-apps/${mediaType}/${editId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(appData)
+                    });
+                } else {
+                    // Add new app
+                    response = await fetch('/api/settings/external-apps', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            media_type: mediaType,
+                            app: appData
+                        })
+                    });
+                }
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showToast(editId ? 'Application updated' : 'Application added', 'success');
+                    document.getElementById('addAppModal').style.display = 'none';
+                    document.getElementById('appId').readOnly = false; // Reset readonly
+                    loadExternalAppsForSettings();
+                } else {
+                    showToast(data.error || 'Failed to save application', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving app:', error);
+                showToast('Failed to save application', 'error');
+            }
+        });
+    }
+});
 
 console.log('AI Gallery initialized ✨');

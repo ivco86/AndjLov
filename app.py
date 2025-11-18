@@ -8,6 +8,7 @@ from werkzeug.utils import secure_filename
 from pathlib import Path
 import os
 import sys
+import json
 import mimetypes
 from PIL import Image, ImageDraw, ImageFont
 import json
@@ -120,33 +121,72 @@ PHOTOS_DIR = os.environ.get('PHOTOS_DIR', './photos')
 DATA_DIR = os.environ.get('DATA_DIR', 'data')
 LM_STUDIO_URL = os.environ.get('LM_STUDIO_URL', 'http://localhost:1234')
 DATABASE_PATH = os.environ.get('DATABASE_PATH', 'data/gallery.db')
+EXTERNAL_APPS_CONFIG = os.path.join(DATA_DIR, 'external_apps.json')
+
+# Helper function to get full file path
+def get_full_filepath(filepath):
+    """
+    Convert relative filepath to absolute path.
+    Handles both old format (./photos/image.jpg) and new format (image.jpg)
+    """
+    if not filepath:
+        return filepath
+
+    # If already absolute path, return as-is
+    if os.path.isabs(filepath):
+        return filepath
+
+    # Normalize path separators
+    normalized = filepath.replace('\\', '/')
+    photos_dir_normalized = PHOTOS_DIR.replace('\\', '/').lstrip('./')
+
+    # Check if path already contains PHOTOS_DIR (old format)
+    # Examples: "./photos/image.jpg", "photos/image.jpg", "./photos/subfolder/image.jpg"
+    if (normalized.startswith(photos_dir_normalized + '/') or
+        normalized.startswith('./' + photos_dir_normalized + '/')):
+        # Path already includes PHOTOS_DIR, return as-is
+        return filepath
+
+    # New format - relative path without PHOTOS_DIR
+    return os.path.join(PHOTOS_DIR, filepath)
 
 # Supported image formats
 SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
 VIDEO_FORMATS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.m4v'}
 ALL_MEDIA_FORMATS = SUPPORTED_FORMATS | VIDEO_FORMATS
 
-# External applications configuration
-EXTERNAL_APPS = {
-    'image': [
-        {'id': 'gimp', 'name': 'GIMP', 'command': 'gimp'},
-        {'id': 'photoshop', 'name': 'Photoshop', 'command': 'photoshop'},
-        {'id': 'krita', 'name': 'Krita', 'command': 'krita'},
-        {'id': 'inkscape', 'name': 'Inkscape', 'command': 'inkscape'},
-        {'id': 'illustrator', 'name': 'Illustrator', 'command': 'illustrator'},
-        {'id': 'affinity', 'name': 'Affinity Photo', 'command': 'affinity-photo'},
-        {'id': 'system', 'name': 'System Default', 'command': 'xdg-open'},
-    ],
-    'video': [
-        {'id': 'vlc', 'name': 'VLC Player', 'command': 'vlc'},
-        {'id': 'mpv', 'name': 'MPV Player', 'command': 'mpv'},
-        {'id': 'kdenlive', 'name': 'Kdenlive', 'command': 'kdenlive'},
-        {'id': 'davinci', 'name': 'DaVinci Resolve', 'command': 'davinci-resolve'},
-        {'id': 'premiere', 'name': 'Premiere Pro', 'command': 'premiere'},
-        {'id': 'ffmpeg', 'name': 'FFplay', 'command': 'ffplay'},
-        {'id': 'system', 'name': 'System Default', 'command': 'xdg-open'},
-    ]
-}
+# External applications configuration - loaded from JSON file
+def load_external_apps():
+    """Load external apps configuration from JSON file"""
+    try:
+        if os.path.exists(EXTERNAL_APPS_CONFIG):
+            with open(EXTERNAL_APPS_CONFIG, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading external apps config: {e}")
+
+    # Default configuration if file doesn't exist
+    return {
+        'image': [
+            {'id': 'system', 'name': 'System Default', 'command': 'system', 'path': '', 'enabled': True}
+        ],
+        'video': [
+            {'id': 'system', 'name': 'System Default', 'command': 'system', 'path': '', 'enabled': True}
+        ]
+    }
+
+def save_external_apps(apps_config):
+    """Save external apps configuration to JSON file"""
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(EXTERNAL_APPS_CONFIG, 'w', encoding='utf-8') as f:
+            json.dump(apps_config, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Error saving external apps config: {e}")
+        return False
+
+EXTERNAL_APPS = load_external_apps()
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -359,6 +399,93 @@ def get_external_apps():
         'apps': EXTERNAL_APPS
     })
 
+@app.route('/api/settings/external-apps', methods=['POST'])
+def add_external_app():
+    """Add new external application"""
+    global EXTERNAL_APPS
+
+    data = request.get_json() or {}
+    media_type = data.get('media_type')  # 'image' or 'video'
+    app_data = data.get('app')
+
+    if not media_type or media_type not in ['image', 'video']:
+        return jsonify({'error': 'media_type must be "image" or "video"'}), 400
+
+    if not app_data or not all(k in app_data for k in ['id', 'name', 'command']):
+        return jsonify({'error': 'app must have id, name, and command'}), 400
+
+    # Check if ID already exists
+    existing = next((a for a in EXTERNAL_APPS.get(media_type, []) if a['id'] == app_data['id']), None)
+    if existing:
+        return jsonify({'error': f'App with id "{app_data["id"]}" already exists'}), 409
+
+    # Add defaults
+    app_data.setdefault('path', '')
+    app_data.setdefault('enabled', True)
+
+    # Add to list
+    if media_type not in EXTERNAL_APPS:
+        EXTERNAL_APPS[media_type] = []
+    EXTERNAL_APPS[media_type].append(app_data)
+
+    # Save to file
+    if save_external_apps(EXTERNAL_APPS):
+        return jsonify({'success': True, 'app': app_data})
+    else:
+        return jsonify({'error': 'Failed to save configuration'}), 500
+
+@app.route('/api/settings/external-apps/<media_type>/<app_id>', methods=['PUT'])
+def update_external_app(media_type, app_id):
+    """Update external application"""
+    global EXTERNAL_APPS
+
+    if media_type not in ['image', 'video']:
+        return jsonify({'error': 'media_type must be "image" or "video"'}), 400
+
+    data = request.get_json() or {}
+
+    # Find app
+    app_list = EXTERNAL_APPS.get(media_type, [])
+    app_index = next((i for i, a in enumerate(app_list) if a['id'] == app_id), None)
+
+    if app_index is None:
+        return jsonify({'error': f'App "{app_id}" not found'}), 404
+
+    # Update fields
+    allowed_fields = ['name', 'command', 'path', 'enabled']
+    for field in allowed_fields:
+        if field in data:
+            EXTERNAL_APPS[media_type][app_index][field] = data[field]
+
+    # Save to file
+    if save_external_apps(EXTERNAL_APPS):
+        return jsonify({'success': True, 'app': EXTERNAL_APPS[media_type][app_index]})
+    else:
+        return jsonify({'error': 'Failed to save configuration'}), 500
+
+@app.route('/api/settings/external-apps/<media_type>/<app_id>', methods=['DELETE'])
+def delete_external_app(media_type, app_id):
+    """Delete external application"""
+    global EXTERNAL_APPS
+
+    if media_type not in ['image', 'video']:
+        return jsonify({'error': 'media_type must be "image" or "video"'}), 400
+
+    # Find and remove app
+    app_list = EXTERNAL_APPS.get(media_type, [])
+    app_index = next((i for i, a in enumerate(app_list) if a['id'] == app_id), None)
+
+    if app_index is None:
+        return jsonify({'error': f'App "{app_id}" not found'}), 404
+
+    removed_app = EXTERNAL_APPS[media_type].pop(app_index)
+
+    # Save to file
+    if save_external_apps(EXTERNAL_APPS):
+        return jsonify({'success': True, 'removed': removed_app})
+    else:
+        return jsonify({'error': 'Failed to save configuration'}), 500
+
 @app.route('/api/images/<int:image_id>/open-with', methods=['POST'])
 def open_with_external_app(image_id):
     """Open image/video with external application"""
@@ -369,7 +496,7 @@ def open_with_external_app(image_id):
         if not image:
             return jsonify({'error': 'Image not found'}), 404
 
-        filepath = image['filepath']
+        filepath = get_full_filepath(image['filepath'])
         if not os.path.exists(filepath):
             return jsonify({'error': 'File not found on disk'}), 404
 
@@ -389,13 +516,37 @@ def open_with_external_app(image_id):
         if not app:
             return jsonify({'error': f'Application {app_id} not found for {media_type}'}), 404
 
+        # Check if app is enabled
+        if not app.get('enabled', True):
+            return jsonify({'error': f'Application {app["name"]} is disabled'}), 400
+
         # Get absolute path
         abs_filepath = os.path.abspath(filepath)
 
-        # Launch application in background
-        command = [app['command'], abs_filepath]
+        # Determine executable path and build command
+        app_path = app.get('path', '').strip()
+        app_command = app.get('command', '').strip()
 
-        print(f"[OPEN_WITH] Opening {abs_filepath} with {app['name']} ({app['command']})")
+        if app_path:
+            # Use custom path if specified
+            command = [app_path, abs_filepath]
+        elif app_command == 'system':
+            # System default - use OS-specific opener
+            import platform
+            system = platform.system()
+            if system == 'Windows':
+                # On Windows, use 'start' command with empty string
+                command = ['cmd', '/c', 'start', '', abs_filepath]
+            elif system == 'Darwin':
+                command = ['open', abs_filepath]
+            else:
+                command = ['xdg-open', abs_filepath]
+        else:
+            # Use command name (assumes it's in PATH)
+            command = [app_command, abs_filepath]
+
+        print(f"[OPEN_WITH] Opening {abs_filepath} with {app['name']}")
+        print(f"[OPEN_WITH] Command: {' '.join(command)}")
 
         # Start process in background (detached)
         subprocess.Popen(
@@ -599,7 +750,7 @@ def serve_image(image_id):
     if not image:
         return jsonify({'error': 'Image not found'}), 404
 
-    filepath = image['filepath']
+    filepath = get_full_filepath(image['filepath'])
 
     # Security: Validate filepath is within PHOTOS_DIR
     abs_filepath = os.path.abspath(filepath)
@@ -629,7 +780,7 @@ def serve_thumbnail(image_id):
     if not image:
         return jsonify({'error': 'Image not found'}), 404
 
-    filepath = image['filepath']
+    filepath = get_full_filepath(image['filepath'])
 
     # Security: Validate filepath is within PHOTOS_DIR
     abs_filepath = os.path.abspath(filepath)
@@ -728,29 +879,34 @@ def rename_image(image_id):
     image = db.get_image(image_id)
     if not image:
         return jsonify({'error': 'Image not found'}), 404
-    
-    old_path = image['filepath']
-    
+
+    old_path = get_full_filepath(image['filepath'])
+
     if not os.path.exists(old_path):
         return jsonify({'error': 'File not found on disk'}), 404
-    
+
     # Sanitize filename
     new_filename = secure_filename(new_filename)
-    
+
     # Keep same directory
     directory = os.path.dirname(old_path)
     new_path = os.path.join(directory, new_filename)
-    
+
     # Check if target exists
     if os.path.exists(new_path):
         return jsonify({'error': 'File with that name already exists'}), 409
-    
+
     try:
         # Rename file on disk
         os.rename(old_path, new_path)
-        
+
+        # Store relative path in database
+        abs_photos_dir = os.path.abspath(PHOTOS_DIR)
+        abs_new_path = os.path.abspath(new_path)
+        relative_new_path = os.path.relpath(abs_new_path, abs_photos_dir)
+
         # Update database
-        db.rename_image(image_id, new_path, new_filename)
+        db.rename_image(image_id, relative_new_path, new_filename)
         
         return jsonify({
             'success': True,
@@ -803,7 +959,7 @@ def analyze_image(image_id):
         if not image:
             return jsonify({'error': 'Image not found'}), 404
 
-        filepath = image['filepath']
+        filepath = get_full_filepath(image['filepath'])
         media_type = image.get('media_type', 'image')
 
         if not os.path.exists(filepath):
@@ -1035,24 +1191,29 @@ def scan_directory():
             ext = Path(filename).suffix.lower()
 
             if ext in ALL_MEDIA_FORMATS:
-                filepath = os.path.join(root, filename)
-                found_media.append(filepath)
+                full_filepath = os.path.join(root, filename)
+                found_media.append(full_filepath)
 
                 try:
-                    file_size = os.path.getsize(filepath)
+                    # Store relative path from PHOTOS_DIR
+                    abs_photos_dir = os.path.abspath(PHOTOS_DIR)
+                    abs_filepath = os.path.abspath(full_filepath)
+                    relative_path = os.path.relpath(abs_filepath, abs_photos_dir)
+
+                    file_size = os.path.getsize(full_filepath)
                     width = None
                     height = None
                     media_type = 'video' if ext in VIDEO_FORMATS else 'image'
 
                     # Get dimensions for images only
                     if media_type == 'image':
-                        img = Image.open(filepath)
+                        img = Image.open(full_filepath)
                         width, height = img.size
                         img.close()
 
-                    # Try to add to database
+                    # Try to add to database with relative path
                     image_id = db.add_image(
-                        filepath=filepath,
+                        filepath=relative_path,
                         filename=filename,
                         width=width,
                         height=height,
@@ -1064,14 +1225,14 @@ def scan_directory():
                         new_media.append({
                             'id': image_id,
                             'filename': filename,
-                            'filepath': filepath,
+                            'filepath': full_filepath,
                             'media_type': media_type
                         })
                     else:
                         skipped += 1
 
                 except Exception as e:
-                    print(f"Error processing {filepath}: {e}")
+                    print(f"Error processing {full_filepath}: {e}")
                     skipped += 1
 
     return jsonify({
@@ -1130,9 +1291,9 @@ def upload_image():
             width, height = img.size
             img.close()
 
-        # Add to database
+        # Add to database with just filename (relative to PHOTOS_DIR)
         image_id = db.add_image(
-            filepath=filepath,
+            filepath=filename,
             filename=filename,
             width=width,
             height=height,
@@ -1176,13 +1337,13 @@ def batch_analyze():
     renamed_count = 0
     
     for image in images:
-        filepath = image['filepath']
+        filepath = get_full_filepath(image['filepath'])
         image_id = image['id']
-        
+
         if not os.path.exists(filepath):
             failed_count += 1
             continue
-        
+
         result = ai.analyze_image(filepath)
         
         if result:
@@ -1718,25 +1879,40 @@ def open_image_folder(image_id):
         return jsonify({'error': 'Image not found'}), 404
 
     # Get full file path
-    filepath = image.get('filepath', '')
-    if not os.path.isabs(filepath):
-        filepath = os.path.join(PHOTOS_DIR, filepath)
+    db_filepath = image.get('filepath', '')
+    filepath = get_full_filepath(db_filepath)
+
+    # Debug logging
+    print(f"[OPEN FOLDER DEBUG] Image ID: {image_id}")
+    print(f"[OPEN FOLDER DEBUG] DB filepath: '{db_filepath}'")
+    print(f"[OPEN FOLDER DEBUG] Full filepath: '{filepath}'")
+    print(f"[OPEN FOLDER DEBUG] File exists: {os.path.exists(filepath)}")
+    print(f"[OPEN FOLDER DEBUG] PHOTOS_DIR: '{PHOTOS_DIR}'")
 
     if not os.path.exists(filepath):
-        return jsonify({'error': 'File not found on disk'}), 404
+        print(f"[OPEN FOLDER DEBUG] ERROR: File not found!")
+        return jsonify({
+            'error': 'File not found on disk',
+            'db_filepath': db_filepath,
+            'full_filepath': filepath
+        }), 404
 
-    # Get directory path
-    folder_path = os.path.dirname(os.path.abspath(filepath))
+    # Get directory path and absolute file path
+    abs_filepath = os.path.abspath(filepath)
+    folder_path = os.path.dirname(abs_filepath)
+    print(f"[OPEN FOLDER DEBUG] Absolute filepath: '{abs_filepath}'")
+    print(f"[OPEN FOLDER DEBUG] Folder to open: '{folder_path}'")
 
     try:
         system = platform.system()
 
         if system == 'Windows':
-            # Windows: open Explorer and select the file
-            subprocess.run(['explorer', '/select,', filepath])
+            # Windows: open Explorer and select the file (needs absolute path)
+            print(f"[OPEN FOLDER DEBUG] Running: explorer /select, {abs_filepath}")
+            subprocess.run(['explorer', '/select,', abs_filepath])
         elif system == 'Darwin':  # macOS
-            # Mac: open Finder and select the file
-            subprocess.run(['open', '-R', filepath])
+            # Mac: open Finder and select the file (needs absolute path)
+            subprocess.run(['open', '-R', abs_filepath])
         else:  # Linux
             # Linux: open file manager in the folder
             # Try different file managers
@@ -1754,6 +1930,7 @@ def open_image_folder(image_id):
                             'folder_path': folder_path
                         }), 500
 
+        print(f"[OPEN FOLDER DEBUG] ✓ Command executed successfully")
         return jsonify({
             'success': True,
             'folder_path': folder_path

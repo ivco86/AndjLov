@@ -1,0 +1,69 @@
+{
+  "image": [
+    {
+      "id": "photoshop",
+      "name": "Photoshop",
+      "command": "photoshop",
+      "path": "",
+      "enabled": true
+    },
+    {
+      "id": "photoshop-beta",
+      "name": "Photoshop Beta",
+      "command": "photoshop-beta",
+      "path": "C:\\Program Files\\Adobe\\Adobe Photoshop (Beta)\\Photoshop.exe",
+      "enabled": true
+    },
+    {
+      "id": "gimp",
+      "name": "GIMP",
+      "command": "gimp",
+      "path": "",
+      "enabled": true
+    },
+    {
+      "id": "krita",
+      "name": "Krita",
+      "command": "krita",
+      "path": "",
+      "enabled": true
+    },
+    {
+      "id": "paint-net",
+      "name": "Paint.NET",
+      "command": "paintdotnet",
+      "path": "",
+      "enabled": true
+    },
+    {
+      "id": "system",
+      "name": "System Default",
+      "command": "system",
+      "path": "",
+      "enabled": true
+    }
+  ],
+  "video": [
+    {
+      "id": "vlc",
+      "name": "VLC Player",
+      "command": "vlc",
+      "path": "",
+      "enabled": true
+    },
+    {
+      "id": "mpv",
+      "name": "MPV Player",
+      "command": "mpv",
+      "path": "",
+      "enabled": true
+    },
+    {
+      "id": "system",
+      "name": "System Default",
+      "command": "system",
+      "path": "",
+      "enabled": true
+    }
+  ]
+}
