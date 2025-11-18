@@ -31,6 +31,9 @@ from ai_service import AIService
 from privacy_service import get_privacy_service
 from research_service import get_research_service
 from pipeline_service import get_pipeline_service
+from email_service import get_email_service
+from scheduler_service import get_scheduler_service
+from cloud_sync_service import get_cloud_sync_service
 
 # Security helper function
 def is_safe_path(filepath, base_dir):
@@ -194,7 +197,18 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 db = Database(DATABASE_PATH)
 ai = AIService(LM_STUDIO_URL)
 research = get_research_service(db)
-pipeline = get_pipeline_service(db, ai, get_privacy_service(), research)
+email = get_email_service(db)
+pipeline = get_pipeline_service(db, ai, get_privacy_service(), research, email)
+scheduler = get_scheduler_service(db, pipeline['executor'])
+cloud_sync = get_cloud_sync_service(db, DATA_DIR)
+
+# Load scheduled pipelines on startup
+if scheduler:
+    scheduler.reload_scheduled_pipelines()
+
+# Check if auto-backup is needed
+if cloud_sync:
+    cloud_sync.auto_backup_if_needed()
 
 # Telegram Bot Management
 telegram_bot_process = None
@@ -2275,6 +2289,378 @@ def get_recent_executions():
         })
     except Exception as e:
         print(f"Error getting recent executions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ============ EMAIL SETTINGS ============
+
+@app.route('/api/settings/email', methods=['GET'])
+def get_email_settings():
+    """Get email configuration"""
+    try:
+        config = email.smtp_config
+        # Don't send password to client
+        safe_config = {**config}
+        if 'password' in safe_config:
+            safe_config['password'] = '***' if safe_config['password'] else ''
+
+        return jsonify({
+            'success': True,
+            'config': safe_config
+        })
+    except Exception as e:
+        print(f"Error getting email settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/settings/email', methods=['POST'])
+def save_email_settings():
+    """Save email configuration"""
+    try:
+        data = request.json
+
+        # Only update password if it's not the placeholder
+        if data.get('password') == '***':
+            data['password'] = email.smtp_config.get('password', '')
+
+        email.save_config(data)
+
+        return jsonify({
+            'success': True,
+            'message': 'Email settings saved'
+        })
+    except Exception as e:
+        print(f"Error saving email settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/settings/email/test', methods=['POST'])
+def test_email_connection():
+    """Test email connection"""
+    try:
+        result = email.test_connection()
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error testing email: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/email/send', methods=['POST'])
+def send_test_email():
+    """Send a test email"""
+    try:
+        data = request.json
+        to_email = data.get('to_email')
+        subject = data.get('subject', 'Test Email from AI Gallery')
+        body = data.get('body', 'This is a test email from AI Gallery.')
+
+        if not to_email:
+            return jsonify({'success': False, 'error': 'Recipient email required'}), 400
+
+        result = email.send_email(to_email, subject, body)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============ SCHEDULER ============
+
+@app.route('/api/scheduler/pipelines', methods=['GET'])
+def get_scheduled_pipelines_list():
+    """Get all scheduled pipelines"""
+    try:
+        if not scheduler:
+            return jsonify({'success': False, 'error': 'Scheduler not available'}), 503
+
+        jobs = scheduler.get_scheduled_pipelines()
+        return jsonify({
+            'success': True,
+            'jobs': jobs,
+            'count': len(jobs)
+        })
+    except Exception as e:
+        print(f"Error getting scheduled pipelines: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/scheduler/pipelines/<int:pipeline_id>/schedule', methods=['POST'])
+def schedule_pipeline_execution(pipeline_id):
+    """Schedule a pipeline for automatic execution"""
+    try:
+        if not scheduler:
+            return jsonify({'success': False, 'error': 'Scheduler not available'}), 503
+
+        data = request.json
+        schedule_config = data.get('schedule_config', {})
+
+        result = scheduler.schedule_pipeline(pipeline_id, schedule_config)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error scheduling pipeline: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/scheduler/pipelines/<int:pipeline_id>/unschedule', methods=['DELETE'])
+def unschedule_pipeline_execution(pipeline_id):
+    """Remove scheduled execution for a pipeline"""
+    try:
+        if not scheduler:
+            return jsonify({'success': False, 'error': 'Scheduler not available'}), 503
+
+        result = scheduler.unschedule_pipeline(pipeline_id)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error unscheduling pipeline: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ============ WEBHOOKS ============
+
+def verify_webhook_token(token: str) -> bool:
+    """Verify webhook authentication token"""
+    # Get webhook token from settings
+    webhook_config = db.get_setting('webhook_config')
+    if not webhook_config:
+        return False
+
+    config = json.loads(webhook_config)
+    return config.get('enabled') and config.get('token') == token
+
+@app.route('/api/webhooks/trigger/<int:pipeline_id>', methods=['POST'])
+def webhook_trigger_pipeline(pipeline_id):
+    """Trigger a pipeline via webhook"""
+    try:
+        # Check authentication
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Missing or invalid authorization'}), 401
+
+        token = auth_header.replace('Bearer ', '')
+        if not verify_webhook_token(token):
+            return jsonify({'error': 'Invalid webhook token'}), 403
+
+        # Get pipeline
+        pipeline_obj = db.get_pipeline(pipeline_id)
+        if not pipeline_obj:
+            return jsonify({'error': 'Pipeline not found'}), 404
+
+        if pipeline_obj['trigger_type'] != 'webhook' and pipeline_obj['trigger_type'] != 'manual':
+            return jsonify({'error': 'Pipeline not configured for webhook trigger'}), 400
+
+        # Get image filter from request
+        data = request.json or {}
+        image_ids = data.get('image_ids', [])
+
+        # If no image IDs provided, use filter from request or pipeline config
+        if not image_ids:
+            image_filter = data.get('image_filter', {})
+            if not image_filter:
+                trigger_config = json.loads(pipeline_obj.get('trigger_config', '{}'))
+                image_filter = trigger_config.get('image_filter', {})
+
+            # Apply filter to get images
+            if image_filter.get('type') == 'all':
+                images = db.get_all_images(limit=10000)
+            elif image_filter.get('type') == 'recent':
+                days = image_filter.get('days', 7)
+                # Get recent images - simplified
+                images = db.get_all_images(limit=1000)
+            elif image_filter.get('type') == 'board':
+                board_id = image_filter.get('board_id')
+                images = db.get_board_images(board_id) if board_id else []
+            else:
+                images = db.get_all_images(limit=100)
+
+            image_ids = [img['id'] for img in images]
+
+        if not image_ids:
+            return jsonify({'error': 'No images to process'}), 400
+
+        # Execute pipeline
+        result = pipeline['executor'].execute_pipeline(
+            pipeline_id=pipeline_id,
+            image_ids=image_ids,
+            trigger_source='webhook'
+        )
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"Error in webhook trigger: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/webhooks/config', methods=['GET'])
+def get_webhook_config():
+    """Get webhook configuration"""
+    try:
+        config_str = db.get_setting('webhook_config')
+        if config_str:
+            config = json.loads(config_str)
+            # Don't send token to client in full
+            if config.get('token'):
+                config['token_preview'] = config['token'][:8] + '...'
+                del config['token']
+        else:
+            config = {
+                'enabled': False,
+                'token': None
+            }
+
+        return jsonify({
+            'success': True,
+            'config': config
+        })
+    except Exception as e:
+        print(f"Error getting webhook config: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/webhooks/config', methods=['POST'])
+def save_webhook_config():
+    """Save webhook configuration"""
+    try:
+        data = request.json
+        enabled = data.get('enabled', False)
+        token = data.get('token')
+
+        # Generate token if enabled but no token provided
+        if enabled and not token:
+            import secrets
+            token = secrets.token_urlsafe(32)
+
+        config = {
+            'enabled': enabled,
+            'token': token
+        }
+
+        db.set_setting('webhook_config', json.dumps(config))
+
+        return jsonify({
+            'success': True,
+            'token': token,
+            'webhook_url': f"{request.host_url}api/webhooks/trigger/<pipeline_id>"
+        })
+    except Exception as e:
+        print(f"Error saving webhook config: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/webhooks/regenerate-token', methods=['POST'])
+def regenerate_webhook_token():
+    """Regenerate webhook token"""
+    try:
+        import secrets
+        new_token = secrets.token_urlsafe(32)
+
+        config_str = db.get_setting('webhook_config')
+        config = json.loads(config_str) if config_str else {}
+
+        config['token'] = new_token
+        db.set_setting('webhook_config', json.dumps(config))
+
+        return jsonify({
+            'success': True,
+            'token': new_token
+        })
+    except Exception as e:
+        print(f"Error regenerating token: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ============ CLOUD SYNC & BACKUP ============
+
+@app.route('/api/backup/create', methods=['POST'])
+def create_backup():
+    """Create a backup"""
+    try:
+        data = request.json or {}
+        include_images = data.get('include_images', True)
+
+        result = cloud_sync.create_backup(include_images=include_images)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error creating backup: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/list', methods=['GET'])
+def list_backups():
+    """List all backups"""
+    try:
+        backups = cloud_sync.get_backups_list()
+        return jsonify({
+            'success': True,
+            'backups': backups,
+            'count': len(backups)
+        })
+    except Exception as e:
+        print(f"Error listing backups: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/<backup_name>', methods=['DELETE'])
+def delete_backup(backup_name):
+    """Delete a backup"""
+    try:
+        result = cloud_sync.delete_backup(backup_name)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error deleting backup: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/<backup_name>/download', methods=['GET'])
+def download_backup(backup_name):
+    """Download a backup file"""
+    try:
+        backup_file = cloud_sync.backup_dir / f'{backup_name}.zip'
+        if not backup_file.exists():
+            return jsonify({'error': 'Backup not found'}), 404
+
+        return send_file(
+            backup_file,
+            as_attachment=True,
+            download_name=f'{backup_name}.zip'
+        )
+    except Exception as e:
+        print(f"Error downloading backup: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cloud-sync/config', methods=['GET'])
+def get_cloud_sync_config():
+    """Get cloud sync configuration"""
+    try:
+        config = cloud_sync.get_sync_config()
+        return jsonify({
+            'success': True,
+            'config': config
+        })
+    except Exception as e:
+        print(f"Error getting cloud sync config: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cloud-sync/config', methods=['POST'])
+def save_cloud_sync_config():
+    """Save cloud sync configuration"""
+    try:
+        data = request.json
+        result = cloud_sync.save_sync_config(data)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error saving cloud sync config: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cloud-sync/remotes', methods=['GET'])
+def list_rclone_remotes():
+    """List rclone remotes"""
+    try:
+        result = cloud_sync.list_rclone_remotes()
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error listing remotes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cloud-sync/sync', methods=['POST'])
+def sync_to_cloud():
+    """Sync backup to cloud"""
+    try:
+        data = request.json
+        remote = data.get('remote')
+
+        if not remote:
+            return jsonify({'error': 'Remote name required'}), 400
+
+        result = cloud_sync.sync_to_cloud(remote)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error syncing to cloud: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ============ STATIC FILES ============

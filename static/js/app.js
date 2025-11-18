@@ -2052,6 +2052,23 @@ function attachEventListeners() {
         });
     }
 
+    // Email configuration event listeners
+    const emailConfigForm = document.getElementById('emailConfigForm');
+    const emailEnabledCheckbox = document.getElementById('emailEnabled');
+    const testEmailBtn = document.getElementById('testEmailBtn');
+
+    if (emailEnabledCheckbox) {
+        emailEnabledCheckbox.addEventListener('change', toggleEmailConfigDetails);
+    }
+
+    if (emailConfigForm) {
+        emailConfigForm.addEventListener('submit', saveEmailConfig);
+    }
+
+    if (testEmailBtn) {
+        testEmailBtn.addEventListener('click', testEmailConnection);
+    }
+
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
@@ -2547,10 +2564,98 @@ function openSettingsModal() {
 
     loadBotStatus();
     loadBotConfig();
+    loadEmailConfig();
 }
 
 function closeSettingsModal() {
     closeModal('settingsModal');
+}
+
+// ============ Email Configuration ============
+
+async function loadEmailConfig() {
+    try {
+        const response = await fetch('/api/settings/email');
+        const data = await response.json();
+
+        if (data.success && data.config) {
+            const config = data.config;
+
+            document.getElementById('emailEnabled').checked = config.enabled || false;
+            document.getElementById('emailSmtpHost').value = config.smtp_host || 'smtp.gmail.com';
+            document.getElementById('emailSmtpPort').value = config.smtp_port || 587;
+            document.getElementById('emailUseTls').checked = config.use_tls !== false;
+            document.getElementById('emailUsername').value = config.username || '';
+            document.getElementById('emailPassword').value = config.password || '';
+            document.getElementById('emailFromEmail').value = config.from_email || '';
+            document.getElementById('emailFromName').value = config.from_name || 'AI Gallery';
+
+            toggleEmailConfigDetails();
+        }
+    } catch (error) {
+        console.error('Error loading email config:', error);
+    }
+}
+
+function toggleEmailConfigDetails() {
+    const enabled = document.getElementById('emailEnabled').checked;
+    const details = document.getElementById('emailConfigDetails');
+    details.style.display = enabled ? 'block' : 'none';
+}
+
+async function saveEmailConfig(e) {
+    e.preventDefault();
+
+    const config = {
+        enabled: document.getElementById('emailEnabled').checked,
+        smtp_host: document.getElementById('emailSmtpHost').value,
+        smtp_port: parseInt(document.getElementById('emailSmtpPort').value),
+        use_tls: document.getElementById('emailUseTls').checked,
+        username: document.getElementById('emailUsername').value,
+        password: document.getElementById('emailPassword').value,
+        from_email: document.getElementById('emailFromEmail').value,
+        from_name: document.getElementById('emailFromName').value
+    };
+
+    try {
+        const response = await fetch('/api/settings/email', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showMessage('Email settings saved successfully!', 'success');
+        } else {
+            showMessage('Error saving email settings: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error saving email config:', error);
+        showMessage('Failed to save email settings: ' + error.message, 'error');
+    }
+}
+
+async function testEmailConnection() {
+    try {
+        showMessage('Testing email connection...', 'info');
+
+        const response = await fetch('/api/settings/email/test', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showMessage('✅ Email connection successful!', 'success');
+        } else {
+            showMessage('❌ Connection failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error testing email:', error);
+        showMessage('Failed to test connection: ' + error.message, 'error');
+    }
 }
 
 // ============ Batch Selection Mode ============

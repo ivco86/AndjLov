@@ -172,6 +172,15 @@ class Database:
             )
         """)
 
+        # Settings table for app configuration
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Create indexes for performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_filepath ON images(filepath)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(is_favorite)")
@@ -2028,3 +2037,40 @@ class Database:
 
         conn.close()
         return logs
+
+    # ============ SETTINGS OPERATIONS ============
+
+    def get_setting(self, key: str) -> Optional[str]:
+        """Get a setting value by key"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        result = cursor.fetchone()
+
+        conn.close()
+        return result['value'] if result else None
+
+    def set_setting(self, key: str, value: str):
+        """Set a setting value"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO settings (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, (key, value))
+
+        conn.commit()
+        conn.close()
+
+    def get_all_settings(self) -> Dict[str, str]:
+        """Get all settings as a dictionary"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT key, value FROM settings")
+        settings = {row['key']: row['value'] for row in cursor.fetchall()}
+
+        conn.close()
+        return settings

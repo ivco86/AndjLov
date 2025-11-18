@@ -14,11 +14,12 @@ from pathlib import Path
 class ActionRegistry:
     """Registry for all available pipeline actions"""
 
-    def __init__(self, db, ai_service=None, privacy_service=None, research_service=None):
+    def __init__(self, db, ai_service=None, privacy_service=None, research_service=None, email_service=None):
         self.db = db
         self.ai_service = ai_service
         self.privacy_service = privacy_service
         self.research_service = research_service
+        self.email_service = email_service
         self.actions = {}
         self._register_built_in_actions()
 
@@ -107,6 +108,14 @@ class ActionRegistry:
             'Log a message',
             self._action_log_message,
             {'message': ''}
+        )
+
+        # Email Actions
+        self.register_action(
+            'send_email',
+            'Send email notification',
+            self._action_send_email,
+            {'to_email': '', 'subject': '', 'body': '', 'attach_image': False}
         )
 
     def register_action(self, action_type: str, description: str,
@@ -321,6 +330,111 @@ class ActionRegistry:
         print(f"[Pipeline Log] Image {image_id}: {message}")
         return message
 
+    def _action_send_email(self, image_id: int, params: Dict, context: Dict) -> str:
+        """Send email notification"""
+        if not self.email_service:
+            raise Exception("Email service not available")
+
+        image = self.db.get_image(image_id)
+        if not image:
+            raise Exception(f"Image {image_id} not found")
+
+        to_email = params.get('to_email')
+        if not to_email:
+            raise Exception("Recipient email required")
+
+        subject = params.get('subject', f"Image Notification: {image['filename']}")
+        body = params.get('body', f"Image: {image['filename']}\nPath: {image['filepath']}")
+        attach_image = params.get('attach_image', False)
+
+        attachments = []
+        if attach_image and image.get('filepath'):
+            attachments.append(image['filepath'])
+
+        result = self.email_service.send_email(
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            attachments=attachments
+        )
+
+        if not result.get('success'):
+            raise Exception(result.get('error', 'Email sending failed'))
+
+        return f"Email sent to {to_email}"
+
+
+class ConditionalEvaluator:
+    """Evaluates conditional expressions for pipeline actions"""
+
+    @staticmethod
+    def evaluate_condition(condition: Dict, image: Dict, context: Dict) -> bool:
+        """Evaluate a condition and return True/False"""
+        condition_type = condition.get('type')
+
+        if condition_type == 'has_tag':
+            tag = condition.get('tag')
+            image_tags = json.loads(image.get('tags', '[]'))
+            return tag in image_tags
+
+        elif condition_type == 'is_favorite':
+            return bool(image.get('is_favorite'))
+
+        elif condition_type == 'has_analysis':
+            return image.get('analyzed_at') is not None
+
+        elif condition_type == 'has_faces':
+            return bool(image.get('has_faces'))
+
+        elif condition_type == 'has_plates':
+            return bool(image.get('has_plates'))
+
+        elif condition_type == 'is_nsfw':
+            return bool(image.get('is_nsfw'))
+
+        elif condition_type == 'in_board':
+            # Check if image is in specific board
+            board_id = condition.get('board_id')
+            # This would require a DB query - simplified for now
+            return context.get(f'in_board_{board_id}', False)
+
+        elif condition_type == 'file_size_gt':
+            size_mb = condition.get('size_mb', 0)
+            return (image.get('file_size', 0) / 1024 / 1024) > size_mb
+
+        elif condition_type == 'file_size_lt':
+            size_mb = condition.get('size_mb', 999)
+            return (image.get('file_size', 0) / 1024 / 1024) < size_mb
+
+        elif condition_type == 'filename_contains':
+            text = condition.get('text', '')
+            return text.lower() in image.get('filename', '').lower()
+
+        elif condition_type == 'context_var':
+            # Check context variable
+            var_name = condition.get('var_name')
+            var_value = condition.get('var_value')
+            return context.get(var_name) == var_value
+
+        elif condition_type == 'and':
+            # Logical AND of multiple conditions
+            conditions = condition.get('conditions', [])
+            return all(ConditionalEvaluator.evaluate_condition(c, image, context) for c in conditions)
+
+        elif condition_type == 'or':
+            # Logical OR of multiple conditions
+            conditions = condition.get('conditions', [])
+            return any(ConditionalEvaluator.evaluate_condition(c, image, context) for c in conditions)
+
+        elif condition_type == 'not':
+            # Logical NOT
+            inner_condition = condition.get('condition', {})
+            return not ConditionalEvaluator.evaluate_condition(inner_condition, image, context)
+
+        else:
+            # Unknown condition type - default to False
+            return False
+
 
 class PipelineExecutor:
     """Executes pipelines and manages execution state"""
@@ -328,6 +442,7 @@ class PipelineExecutor:
     def __init__(self, db, action_registry: ActionRegistry):
         self.db = db
         self.action_registry = action_registry
+        self.evaluator = ConditionalEvaluator()
 
     def execute_pipeline(self, pipeline_id: int, image_ids: List[int],
                         trigger_source: str = 'manual') -> Dict:
@@ -362,11 +477,31 @@ class PipelineExecutor:
             context = {}  # Shared context between actions
             image_failed = False
 
+            # Get image data for conditional evaluation
+            image = self.db.get_image(image_id)
+
             # Execute each action
             for action in actions:
                 action_type = action.get('type')
                 action_params = action.get('params', {})
+                condition = action.get('condition')
 
+                # Check condition if present
+                should_execute = True
+                if condition:
+                    should_execute = self.evaluator.evaluate_condition(condition, image, context)
+
+                    image_log['actions'].append({
+                        'type': action_type,
+                        'success': True,
+                        'result': f'Skipped (condition not met)',
+                        'skipped': True
+                    })
+
+                    if not should_execute:
+                        continue  # Skip this action
+
+                # Execute action
                 action_result = self.action_registry.execute_action(
                     action_type,
                     image_id,
@@ -378,13 +513,34 @@ class PipelineExecutor:
                     'type': action_type,
                     'success': action_result.get('success'),
                     'result': action_result.get('result'),
-                    'error': action_result.get('error')
+                    'error': action_result.get('error'),
+                    'skipped': False
                 })
 
                 if not action_result.get('success'):
                     image_failed = True
                     failed_images += 1
                     break  # Stop processing this image on error
+
+                # Execute "else" action if condition was present and action succeeded
+                else_action = action.get('else_action')
+                if condition and not should_execute and else_action:
+                    else_type = else_action.get('type')
+                    else_params = else_action.get('params', {})
+
+                    else_result = self.action_registry.execute_action(
+                        else_type,
+                        image_id,
+                        else_params,
+                        context
+                    )
+
+                    image_log['actions'].append({
+                        'type': f'{else_type} (else)',
+                        'success': else_result.get('success'),
+                        'result': else_result.get('result'),
+                        'error': else_result.get('error')
+                    })
 
             if not image_failed:
                 successful_images += 1
@@ -502,12 +658,12 @@ class PipelineTemplates:
 _pipeline_service = None
 
 
-def get_pipeline_service(db=None, ai_service=None, privacy_service=None, research_service=None):
+def get_pipeline_service(db=None, ai_service=None, privacy_service=None, research_service=None, email_service=None):
     """Get or create pipeline service singleton"""
     global _pipeline_service
 
     if _pipeline_service is None and db:
-        action_registry = ActionRegistry(db, ai_service, privacy_service, research_service)
+        action_registry = ActionRegistry(db, ai_service, privacy_service, research_service, email_service)
         executor = PipelineExecutor(db, action_registry)
 
         _pipeline_service = {

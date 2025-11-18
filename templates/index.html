@@ -537,6 +537,106 @@
                         </ol>
                     </div>
                 </div>
+
+                <!-- Email Notifications Settings -->
+                <div class="settings-section" style="margin-top: var(--spacing-xl); padding-top: var(--spacing-xl); border-top: 1px solid var(--border-color);">
+                    <h3>📧 Email Notifications</h3>
+
+                    <form id="emailConfigForm">
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="emailEnabled">
+                                Enable email notifications
+                            </label>
+                            <small>Send automated emails from workflows and pipeline executions</small>
+                        </div>
+
+                        <div id="emailConfigDetails" style="display: none;">
+                            <div class="form-group">
+                                <label for="emailSmtpHost">SMTP Server</label>
+                                <input
+                                    type="text"
+                                    id="emailSmtpHost"
+                                    placeholder="smtp.gmail.com"
+                                >
+                                <small>Gmail: smtp.gmail.com | Outlook: smtp-mail.outlook.com</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="emailSmtpPort">SMTP Port</label>
+                                <input
+                                    type="number"
+                                    id="emailSmtpPort"
+                                    placeholder="587"
+                                    value="587"
+                                >
+                                <small>587 for TLS, 465 for SSL</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="emailUseTls" checked>
+                                    Use TLS encryption
+                                </label>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="emailUsername">Email Username</label>
+                                <input
+                                    type="email"
+                                    id="emailUsername"
+                                    placeholder="your-email@gmail.com"
+                                    autocomplete="email"
+                                >
+                            </div>
+
+                            <div class="form-group">
+                                <label for="emailPassword">Email Password</label>
+                                <input
+                                    type="password"
+                                    id="emailPassword"
+                                    placeholder="App-specific password"
+                                    autocomplete="off"
+                                >
+                                <small>For Gmail, use an <a href="https://support.google.com/accounts/answer/185833" target="_blank">App Password</a></small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="emailFromEmail">From Email</label>
+                                <input
+                                    type="email"
+                                    id="emailFromEmail"
+                                    placeholder="your-email@gmail.com"
+                                >
+                            </div>
+
+                            <div class="form-group">
+                                <label for="emailFromName">From Name</label>
+                                <input
+                                    type="text"
+                                    id="emailFromName"
+                                    placeholder="AI Gallery"
+                                    value="AI Gallery"
+                                >
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">💾 Save Email Settings</button>
+                            <button type="button" class="btn btn-secondary" id="testEmailBtn">🔍 Test Connection</button>
+                        </div>
+                    </form>
+
+                    <div class="help-text" style="margin-top: var(--spacing-md);">
+                        <p><strong>Gmail Setup:</strong></p>
+                        <ol>
+                            <li>Enable 2-Step Verification in your Google Account</li>
+                            <li>Generate an App Password at <a href="https://myaccount.google.com/apppasswords" target="_blank">myaccount.google.com/apppasswords</a></li>
+                            <li>Use the App Password (not your Gmail password)</li>
+                            <li>SMTP: smtp.gmail.com, Port: 587, TLS: On</li>
+                        </ol>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
