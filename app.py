@@ -123,9 +123,29 @@ DATABASE_PATH = os.environ.get('DATABASE_PATH', 'data/gallery.db')
 
 # Helper function to get full file path
 def get_full_filepath(filepath):
-    """Convert relative filepath to absolute path"""
+    """
+    Convert relative filepath to absolute path.
+    Handles both old format (./photos/image.jpg) and new format (image.jpg)
+    """
+    if not filepath:
+        return filepath
+
+    # If already absolute path, return as-is
     if os.path.isabs(filepath):
         return filepath
+
+    # Normalize path separators
+    normalized = filepath.replace('\\', '/')
+    photos_dir_normalized = PHOTOS_DIR.replace('\\', '/').lstrip('./')
+
+    # Check if path already contains PHOTOS_DIR (old format)
+    # Examples: "./photos/image.jpg", "photos/image.jpg", "./photos/subfolder/image.jpg"
+    if (normalized.startswith(photos_dir_normalized + '/') or
+        normalized.startswith('./' + photos_dir_normalized + '/')):
+        # Path already includes PHOTOS_DIR, return as-is
+        return filepath
+
+    # New format - relative path without PHOTOS_DIR
     return os.path.join(PHOTOS_DIR, filepath)
 
 # Supported image formats
