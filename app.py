@@ -1773,19 +1773,22 @@ def open_image_folder(image_id):
             'full_filepath': filepath
         }), 404
 
-    # Get directory path
-    folder_path = os.path.dirname(os.path.abspath(filepath))
+    # Get directory path and absolute file path
+    abs_filepath = os.path.abspath(filepath)
+    folder_path = os.path.dirname(abs_filepath)
+    print(f"[OPEN FOLDER DEBUG] Absolute filepath: '{abs_filepath}'")
     print(f"[OPEN FOLDER DEBUG] Folder to open: '{folder_path}'")
 
     try:
         system = platform.system()
 
         if system == 'Windows':
-            # Windows: open Explorer and select the file
-            subprocess.run(['explorer', '/select,', filepath])
+            # Windows: open Explorer and select the file (needs absolute path)
+            print(f"[OPEN FOLDER DEBUG] Running: explorer /select, {abs_filepath}")
+            subprocess.run(['explorer', '/select,', abs_filepath])
         elif system == 'Darwin':  # macOS
-            # Mac: open Finder and select the file
-            subprocess.run(['open', '-R', filepath])
+            # Mac: open Finder and select the file (needs absolute path)
+            subprocess.run(['open', '-R', abs_filepath])
         else:  # Linux
             # Linux: open file manager in the folder
             # Try different file managers
@@ -1803,6 +1806,7 @@ def open_image_folder(image_id):
                             'folder_path': folder_path
                         }), 500
 
+        print(f"[OPEN FOLDER DEBUG] ✓ Command executed successfully")
         return jsonify({
             'success': True,
             'folder_path': folder_path
