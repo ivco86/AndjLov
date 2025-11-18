@@ -1706,6 +1706,65 @@ def get_reverse_search_options(image_id):
         'search_guide': search_guide
     })
 
+@app.route('/api/images/<int:image_id>/open-folder', methods=['POST'])
+def open_image_folder(image_id):
+    """Open the folder containing the image in file explorer"""
+    import platform
+    import subprocess
+
+    # Get image info
+    image = db.get_image(image_id)
+    if not image:
+        return jsonify({'error': 'Image not found'}), 404
+
+    # Get full file path
+    filepath = image.get('filepath', '')
+    if not os.path.isabs(filepath):
+        filepath = os.path.join(PHOTOS_DIR, filepath)
+
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'File not found on disk'}), 404
+
+    # Get directory path
+    folder_path = os.path.dirname(os.path.abspath(filepath))
+
+    try:
+        system = platform.system()
+
+        if system == 'Windows':
+            # Windows: open Explorer and select the file
+            subprocess.run(['explorer', '/select,', filepath])
+        elif system == 'Darwin':  # macOS
+            # Mac: open Finder and select the file
+            subprocess.run(['open', '-R', filepath])
+        else:  # Linux
+            # Linux: open file manager in the folder
+            # Try different file managers
+            try:
+                subprocess.run(['xdg-open', folder_path])
+            except FileNotFoundError:
+                try:
+                    subprocess.run(['nautilus', folder_path])
+                except FileNotFoundError:
+                    try:
+                        subprocess.run(['dolphin', folder_path])
+                    except FileNotFoundError:
+                        return jsonify({
+                            'error': 'Could not detect file manager. Please install xdg-utils.',
+                            'folder_path': folder_path
+                        }), 500
+
+        return jsonify({
+            'success': True,
+            'folder_path': folder_path
+        })
+
+    except Exception as e:
+        return jsonify({
+            'error': f'Failed to open folder: {str(e)}',
+            'folder_path': folder_path
+        }), 500
+
 # ============ STATIC FILES ============
 
 @app.route('/favicon.ico')
