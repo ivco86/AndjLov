@@ -544,6 +544,80 @@
                         </ol>
                     </div>
                 </div>
+
+                <!-- External Apps Settings -->
+                <div class="settings-section" style="margin-top: var(--spacing-xl);">
+                    <h3>🖥️ External Applications</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: var(--spacing-md);">
+                        Configure applications to open images and videos with "Open With" feature.
+                    </p>
+
+                    <!-- Image Apps -->
+                    <h4 style="margin-top: var(--spacing-lg);">📷 Image Editors</h4>
+                    <div id="imageAppsList" style="margin-bottom: var(--spacing-lg);">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="showAddAppModal('image')">➕ Add Image Editor</button>
+
+                    <!-- Video Apps -->
+                    <h4 style="margin-top: var(--spacing-lg);">🎬 Video Players</h4>
+                    <div id="videoAppsList" style="margin-bottom: var(--spacing-lg);">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="showAddAppModal('video')">➕ Add Video Player</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit External App Modal -->
+    <div class="modal" id="addAppModal" style="display: none;">
+        <div class="modal-overlay" onclick="this.parentElement.style.display='none'"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" onclick="this.parentElement.parentElement.style.display='none'">&times;</button>
+
+            <div class="modal-body">
+                <h2 id="addAppModalTitle">Add Application</h2>
+
+                <form id="addAppForm">
+                    <input type="hidden" id="appMediaType">
+                    <input type="hidden" id="appEditId">
+
+                    <div class="form-group">
+                        <label for="appName">Application Name *</label>
+                        <input type="text" id="appName" placeholder="e.g., Photoshop Beta" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="appId">ID (unique identifier) *</label>
+                        <input type="text" id="appId" placeholder="e.g., photoshop-beta" pattern="[a-z0-9-]+" required>
+                        <small>Only lowercase letters, numbers, and dashes</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="appPath">Executable Path</label>
+                        <input type="text" id="appPath" placeholder="C:\Program Files\App\app.exe">
+                        <small>Full path to .exe file (leave empty to use command name)</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="appCommand">Command</label>
+                        <input type="text" id="appCommand" placeholder="photoshop" required>
+                        <small>Command name (used if path is empty)</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="appEnabled" checked>
+                            Enabled
+                        </label>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Application</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
