@@ -1273,6 +1273,9 @@ function updateModal() {
                     <button class="action-btn secondary" onclick="openReverseSearchModal(${image.id})">
                         🔍 Reverse Search
                     </button>
+                    <button class="action-btn secondary" onclick="openSendToTelegramModal(${image.id})">
+                        📤 Send to Telegram
+                    </button>
                 </div>
             </div>
 
@@ -2309,9 +2312,9 @@ function getAllBoardsFlat() {
             const currentPath = parentPath;
             result.push({ board, path: currentPath, level });
 
-            if (board.subboards && board.subboards.length > 0) {
+            if (board.sub_boards && board.sub_boards.length > 0) {
                 const newPath = parentPath ? `${parentPath} / ${board.name}` : board.name;
-                traverse(board.subboards, newPath, level + 1);
+                traverse(board.sub_boards, newPath, level + 1);
             }
         });
     }
@@ -3635,6 +3638,161 @@ function openSearchAndDownload(searchUrl, imageUrl, filename, provider) {
 
     // Show instructions
     showToast(`📥 Image downloaded! Now drag and drop it to ${provider} or use their upload button.`, 'success', 6000);
+}
+
+// ============ Send to Telegram ============
+
+async function openSendToTelegramModal(imageId) {
+    try {
+        // Get image details
+        const response = await fetch(`/api/images/${imageId}`);
+        const image = await response.json();
+
+        if (!response.ok) {
+            showToast('Failed to load image details', 'error');
+            return;
+        }
+
+        // Retrieve saved chat_id from localStorage
+        const savedChatId = localStorage.getItem('telegram_chat_id') || '';
+        const savedCaption = localStorage.getItem('telegram_default_caption') || '';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'telegram-send-modal';
+        modal.style.display = 'block';
+
+        const mediaType = image.media_type || 'image';
+        const mediaLabel = mediaType === 'video' ? 'video' : 'image';
+        const mediaIcon = mediaType === 'video' ? '🎥' : '📤';
+
+        modal.innerHTML = `
+            <div class="modal-overlay" onclick="this.parentElement.remove()"></div>
+            <div class="modal-content" style="max-width: 600px;">
+                <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
+                <div class="modal-body">
+                    <h2>${mediaIcon} Send to Telegram</h2>
+                    <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">
+                        Send this ${mediaLabel} to your Telegram chat or group.
+                    </p>
+
+                    <div style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--radius-md); margin-bottom: var(--spacing-lg);">
+                        <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+                            <img src="/api/images/${imageId}/thumbnail?size=200"
+                                 alt="${escapeHtml(image.filename)}"
+                                 style="width: 100px; height: 100px; object-fit: cover; border-radius: var(--radius-sm);">
+                            <div style="flex: 1;">
+                                <strong style="color: var(--text-primary); display: block; margin-bottom: var(--spacing-xs);">
+                                    ${escapeHtml(image.filename)}
+                                </strong>
+                                <span style="font-size: 13px; color: var(--text-secondary);">
+                                    ${image.width} × ${image.height}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: var(--spacing-lg);">
+                        <label style="display: block; margin-bottom: var(--spacing-sm); font-weight: 600; color: var(--text-primary);">
+                            Chat ID <span style="color: red;">*</span>
+                        </label>
+                        <input type="text"
+                               id="telegram-chat-id"
+                               class="form-control"
+                               value="${escapeHtml(savedChatId)}"
+                               placeholder="-1001234567890"
+                               style="width: 100%; padding: var(--spacing-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary);">
+                        <small style="color: var(--text-secondary); display: block; margin-top: var(--spacing-xs);">
+                            Enter your Telegram chat ID or group ID. To get your chat ID, send /start to the bot.
+                        </small>
+                    </div>
+
+                    <div style="margin-bottom: var(--spacing-lg);">
+                        <label style="display: block; margin-bottom: var(--spacing-sm); font-weight: 600; color: var(--text-primary);">
+                            Caption (Optional)
+                        </label>
+                        <textarea id="telegram-caption"
+                                  class="form-control"
+                                  rows="3"
+                                  placeholder="Add a caption to your photo..."
+                                  style="width: 100%; padding: var(--spacing-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); resize: vertical;">${escapeHtml(savedCaption)}</textarea>
+                        <small style="color: var(--text-secondary); display: block; margin-top: var(--spacing-xs);">
+                            Add an optional message to accompany the photo. Supports Markdown formatting.
+                        </small>
+                    </div>
+
+                    <div style="background: var(--bg-tertiary); padding: var(--spacing-md); border-radius: var(--radius-sm); margin-bottom: var(--spacing-lg);">
+                        <strong style="display: block; margin-bottom: var(--spacing-xs); color: var(--text-primary);">💡 How to find your Chat ID:</strong>
+                        <ol style="margin: 0; padding-left: var(--spacing-lg); color: var(--text-secondary); font-size: 14px;">
+                            <li>Start your bot (make sure it's running)</li>
+                            <li>Send <code>/start</code> to your bot in Telegram</li>
+                            <li>The bot will reply with your Chat ID</li>
+                            <li>For groups: Add the bot to your group and send <code>/start</code> there</li>
+                        </ol>
+                    </div>
+
+                    <div class="form-actions">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
+                        <button class="btn btn-primary" onclick="sendPhotoToTelegram(${imageId})">
+                            ${mediaIcon} Send ${mediaLabel.charAt(0).toUpperCase() + mediaLabel.slice(1)}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+    } catch (error) {
+        console.error('Error opening Telegram modal:', error);
+        showToast('Failed to open Telegram modal', 'error');
+    }
+}
+
+async function sendPhotoToTelegram(imageId) {
+    const chatId = document.getElementById('telegram-chat-id').value.trim();
+    const caption = document.getElementById('telegram-caption').value.trim();
+
+    if (!chatId) {
+        showToast('Please enter a Chat ID', 'error');
+        return;
+    }
+
+    // Save chat_id and caption for next time
+    localStorage.setItem('telegram_chat_id', chatId);
+    localStorage.setItem('telegram_default_caption', caption);
+
+    try {
+        showToast('Sending to Telegram...', 'info');
+
+        const response = await fetch('/api/telegram/send-photo', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                image_id: imageId,
+                chat_id: chatId,
+                caption: caption || null
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            const mediaType = data.media_type === 'video' ? 'Video' : 'Photo';
+            showToast(`✅ ${mediaType} sent to Telegram successfully!`, 'success');
+            // Close only the Telegram modal
+            const telegramModal = document.getElementById('telegram-send-modal');
+            if (telegramModal) {
+                telegramModal.remove();
+            }
+        } else {
+            showToast(`Failed to send: ${data.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error sending to Telegram:', error);
+        showToast('Failed to send to Telegram', 'error');
+    }
 }
 
 async function openImageFolder(imageId) {
