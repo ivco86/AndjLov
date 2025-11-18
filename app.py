@@ -1422,7 +1422,7 @@ def export_images_csv():
     # Get images
     images = []
     for image_id in image_ids:
-        image = db.get_image_by_id(image_id)
+        image = db.get_image(image_id)
         if image:
             images.append(image)
 
@@ -1451,7 +1451,7 @@ def export_images_json():
     # Get images
     images = []
     for image_id in image_ids:
-        image = db.get_image_by_id(image_id)
+        image = db.get_image(image_id)
         if image:
             images.append(image)
 
@@ -1474,7 +1474,7 @@ def export_images_json():
 def export_board_csv(board_id):
     """Export board images metadata to CSV"""
     # Get board info
-    board = db.get_board_by_id(board_id)
+    board = db.get_board(board_id)
     if not board:
         return jsonify({'error': 'Board not found'}), 404
 
@@ -1498,7 +1498,7 @@ def export_board_csv(board_id):
 def export_board_json(board_id):
     """Export board images metadata to JSON"""
     # Get board info
-    board = db.get_board_by_id(board_id)
+    board = db.get_board(board_id)
     if not board:
         return jsonify({'error': 'Board not found'}), 404
 
@@ -1522,7 +1522,7 @@ def export_board_json(board_id):
 def export_board_pdf(board_id):
     """Generate PDF catalog for a board"""
     # Get board info
-    board = db.get_board_by_id(board_id)
+    board = db.get_board(board_id)
     if not board:
         return jsonify({'error': 'Board not found'}), 404
 
@@ -1609,7 +1609,7 @@ def export_images_pdf():
     # Get images
     images = []
     for image_id in image_ids:
-        image = db.get_image_by_id(image_id)
+        image = db.get_image(image_id)
         if image:
             images.append(image)
 
