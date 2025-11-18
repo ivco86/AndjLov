@@ -36,6 +36,7 @@
             <button class="btn btn-secondary" id="privacyBtn" aria-label="Privacy mode">🔒 Privacy</button>
             <button class="btn btn-secondary" id="exportImportBtn" aria-label="Export/Import data">📦 Export/Import</button>
             <button class="btn btn-secondary" id="researchBtn" aria-label="Research & Education">🎓 Research</button>
+            <button class="btn btn-secondary" id="workflowsBtn" aria-label="Workflow Automation">⚡ Workflows</button>
             <button class="btn btn-secondary" id="settingsBtn" aria-label="Open settings">⚙️ Settings</button>
         </div>
     </header>
@@ -1018,7 +1019,135 @@
         </div>
     </div>
 
+    <!-- Workflow Automation Modal -->
+    <div class="modal" id="workflowsModal" style="display: none;">
+        <div class="modal-overlay" id="workflowsOverlay"></div>
+        <div class="modal-body" style="max-width: 1000px; max-height: 90vh; overflow-y: auto;">
+            <button class="modal-close" id="workflowsClose" aria-label="Close workflows modal">&times;</button>
+            <h2 style="margin-bottom: var(--spacing-lg);">⚡ Workflow Automation</h2>
+
+            <!-- Tabs -->
+            <div class="workflow-tabs" style="display: flex; gap: var(--spacing-sm); margin-bottom: var(--spacing-lg); border-bottom: 2px solid var(--bg-secondary);">
+                <button class="workflow-tab active" data-tab="pipelines" style="padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent;">
+                    📋 My Pipelines
+                </button>
+                <button class="workflow-tab" data-tab="templates" style="padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent;">
+                    📦 Templates
+                </button>
+                <button class="workflow-tab" data-tab="logs" style="padding: var(--spacing-sm) var(--spacing-md); background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent;">
+                    📊 Execution Logs
+                </button>
+            </div>
+
+            <!-- My Pipelines Tab -->
+            <div class="workflow-tab-content" id="pipelinesTab">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-md);">
+                    <h3>Your Pipelines</h3>
+                    <button class="btn btn-primary" id="createPipelineBtn">+ Create Pipeline</button>
+                </div>
+
+                <div id="pipelinesList" style="display: grid; gap: var(--spacing-md);"></div>
+
+                <div id="noPipelinesMessage" style="display: none; text-align: center; padding: var(--spacing-xl); color: var(--text-muted);">
+                    <p style="font-size: 1.2rem; margin-bottom: var(--spacing-sm);">No pipelines yet</p>
+                    <p>Create your first pipeline or use a template!</p>
+                </div>
+            </div>
+
+            <!-- Templates Tab -->
+            <div class="workflow-tab-content" id="templatesTab" style="display: none;">
+                <h3 style="margin-bottom: var(--spacing-md);">Pipeline Templates</h3>
+                <p style="color: var(--text-muted); margin-bottom: var(--spacing-lg);">
+                    Start with a pre-built template and customize it to your needs.
+                </p>
+
+                <div id="templatesList" style="display: grid; gap: var(--spacing-md);"></div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div class="workflow-tab-content" id="logsTab" style="display: none;">
+                <h3 style="margin-bottom: var(--spacing-md);">Recent Executions</h3>
+
+                <div id="executionLogsList" style="display: grid; gap: var(--spacing-sm);"></div>
+
+                <div id="noLogsMessage" style="display: none; text-align: center; padding: var(--spacing-xl); color: var(--text-muted);">
+                    <p>No executions yet</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pipeline Builder Modal -->
+    <div class="modal" id="pipelineBuilderModal" style="display: none;">
+        <div class="modal-overlay" id="pipelineBuilderOverlay"></div>
+        <div class="modal-body" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+            <button class="modal-close" id="pipelineBuilderClose" aria-label="Close pipeline builder">&times;</button>
+            <h2 style="margin-bottom: var(--spacing-lg);" id="pipelineBuilderTitle">Create Pipeline</h2>
+
+            <form id="pipelineBuilderForm">
+                <!-- Basic Info -->
+                <div style="margin-bottom: var(--spacing-md);">
+                    <label style="display: block; margin-bottom: var(--spacing-xs); font-weight: bold;">Pipeline Name *</label>
+                    <input type="text" id="pipelineName" required style="width: 100%; padding: var(--spacing-sm); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                </div>
+
+                <div style="margin-bottom: var(--spacing-md);">
+                    <label style="display: block; margin-bottom: var(--spacing-xs); font-weight: bold;">Description</label>
+                    <textarea id="pipelineDescription" rows="2" style="width: 100%; padding: var(--spacing-sm); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--border-radius);"></textarea>
+                </div>
+
+                <!-- Trigger -->
+                <div style="margin-bottom: var(--spacing-lg);">
+                    <label style="display: block; margin-bottom: var(--spacing-xs); font-weight: bold;">Trigger *</label>
+                    <select id="pipelineTrigger" style="width: 100%; padding: var(--spacing-sm); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                        <option value="manual">Manual - Run on demand</option>
+                        <option value="on_scan">On Scan - When new images are scanned</option>
+                        <option value="on_upload">On Upload - When images are uploaded</option>
+                    </select>
+                </div>
+
+                <!-- Actions -->
+                <div style="margin-bottom: var(--spacing-lg);">
+                    <label style="display: block; margin-bottom: var(--spacing-xs); font-weight: bold;">Actions *</label>
+                    <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: var(--spacing-sm);">
+                        Actions run sequentially in the order shown.
+                    </p>
+
+                    <div id="actionsList" style="margin-bottom: var(--spacing-sm);"></div>
+
+                    <button type="button" class="btn btn-secondary" id="addActionBtn">+ Add Action</button>
+                </div>
+
+                <!-- Enabled -->
+                <div style="margin-bottom: var(--spacing-lg);">
+                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                        <input type="checkbox" id="pipelineEnabled" checked>
+                        <span>Enable pipeline</span>
+                    </label>
+                </div>
+
+                <!-- Buttons -->
+                <div style="display: flex; gap: var(--spacing-sm); justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary" id="cancelPipelineBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="savePipelineBtn">Save Pipeline</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Action Selector Modal -->
+    <div class="modal" id="actionSelectorModal" style="display: none;">
+        <div class="modal-overlay" id="actionSelectorOverlay"></div>
+        <div class="modal-body" style="max-width: 600px;">
+            <button class="modal-close" id="actionSelectorClose" aria-label="Close action selector">&times;</button>
+            <h3 style="margin-bottom: var(--spacing-md);">Select Action</h3>
+
+            <div id="availableActionsList" style="display: grid; gap: var(--spacing-sm);"></div>
+        </div>
+    </div>
+
     <script src="/static/js/app.js"></script>
     <script src="/static/js/research.js"></script>
+    <script src="/static/js/workflows.js"></script>
 </body>
 </html>
