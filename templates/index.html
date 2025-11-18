@@ -33,6 +33,7 @@
             <button class="btn btn-secondary" id="findDuplicatesBtn" aria-label="Find duplicate images">🔍 Find Duplicates</button>
             <button class="btn btn-secondary" id="analyzeBtn" aria-label="Analyze multiple images with AI">🤖 Analyze</button>
             <button class="btn btn-secondary" id="selectBtn" aria-label="Select multiple images">✓ Select</button>
+            <button class="btn btn-secondary" id="privacyBtn" aria-label="Privacy mode">🔒 Privacy</button>
             <button class="btn btn-secondary" id="exportImportBtn" aria-label="Export/Import data">📦 Export/Import</button>
             <button class="btn btn-secondary" id="settingsBtn" aria-label="Open settings">⚙️ Settings</button>
         </div>
@@ -705,6 +706,111 @@
                         <li>Copy AI's JSON response</li>
                         <li>Import the suggestions back into AI Gallery</li>
                     </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Privacy Modal -->
+    <div class="modal" id="privacyModal" style="display: none;">
+        <div class="modal-overlay" id="privacyOverlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="privacyClose" aria-label="Close privacy modal">&times;</button>
+
+            <div class="modal-body">
+                <h2>🔒 Privacy & Protection</h2>
+
+                <div class="settings-section">
+                    <h3>Privacy Statistics</h3>
+                    <div class="stat-item">
+                        <span class="stat-label">Images with faces:</span>
+                        <span class="stat-value" id="privacyStatFaces">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">NSFW flagged:</span>
+                        <span class="stat-value" id="privacyStatNSFW">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Not analyzed:</span>
+                        <span class="stat-value" id="privacyStatUnanalyzed">0</span>
+                    </div>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border-color); margin: var(--spacing-lg) 0;">
+
+                <div class="settings-section">
+                    <h3>🔍 Privacy Detection</h3>
+                    <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: var(--spacing-md);">
+                        Automatically detect and blur sensitive content in your images
+                    </p>
+
+                    <div class="form-group">
+                        <label>What to detect:</label>
+                        <label style="display: block; margin-bottom: var(--spacing-xs);">
+                            <input type="checkbox" id="detectFaces" checked>
+                            Faces (using OpenCV Haar Cascades)
+                        </label>
+                        <label style="display: block; margin-bottom: var(--spacing-xs);">
+                            <input type="checkbox" id="detectPlates" checked>
+                            License plates (pattern matching)
+                        </label>
+                        <label style="display: block; margin-bottom: var(--spacing-xs);">
+                            <input type="checkbox" id="detectNSFW">
+                            NSFW content (AI-based, experimental)
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="blurStrength">Blur Strength:</label>
+                        <input type="range" id="blurStrength" min="10" max="50" value="30" style="width: 100%;">
+                        <small style="color: var(--text-muted);">
+                            Current: <span id="blurStrengthValue">30</span>
+                        </small>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-primary" id="analyzeAllPrivacyBtn">
+                            🔍 Analyze All Images
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="analyzeSelectedPrivacyBtn">
+                            🔍 Analyze Selected
+                        </button>
+                    </div>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border-color); margin: var(--spacing-lg) 0;">
+
+                <div class="settings-section">
+                    <h3>🖼️ Privacy Mode</h3>
+                    <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: var(--spacing-md);">
+                        When enabled, all images with detected privacy zones will display blurred
+                    </p>
+
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: var(--spacing-sm);">
+                            <input type="checkbox" id="privacyModeEnabled">
+                            <span>Enable Privacy Mode</span>
+                        </label>
+                        <small style="color: var(--text-muted);">
+                            Thumbnails will automatically blur faces and license plates
+                        </small>
+                    </div>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border-color); margin: var(--spacing-lg) 0;">
+
+                <div class="help-text">
+                    <p><strong>How it works:</strong></p>
+                    <ol style="font-size: 0.875rem; color: var(--text-muted);">
+                        <li>Click "Analyze" to detect faces, license plates, and sensitive content</li>
+                        <li>Detected zones are stored in the database</li>
+                        <li>Enable Privacy Mode to automatically blur these zones in thumbnails</li>
+                        <li>Original images are never modified - blur is applied on-the-fly</li>
+                    </ol>
+
+                    <p style="margin-top: var(--spacing-md); font-size: 0.875rem; color: var(--text-muted);">
+                        <strong>Note:</strong> Privacy detection uses local processing only. No data is sent to external services.
+                    </p>
                 </div>
             </div>
         </div>

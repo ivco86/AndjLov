@@ -28,6 +28,7 @@ except ImportError:
 
 from database import Database
 from ai_service import AIService
+from privacy_service import get_privacy_service
 
 # Helper functions for video processing
 def extract_video_frame(video_path, output_path, time_sec=1.0):
@@ -1405,6 +1406,195 @@ def board_images(board_id):
             'image_id': image_id,
             'action': 'removed'
         })
+
+# ============ PRIVACY OPERATIONS ============
+
+@app.route('/api/images/<int:image_id>/privacy/analyze', methods=['POST'])
+def analyze_image_privacy(image_id):
+    """
+    Analyze image for privacy concerns (faces, license plates, NSFW)
+    """
+    image = db.get_image(image_id)
+
+    if not image:
+        return jsonify({'error': 'Image not found'}), 404
+
+    # Get image path
+    image_path = image['filepath']
+
+    if not os.path.exists(image_path):
+        return jsonify({'error': 'Image file not found'}), 404
+
+    try:
+        # Perform privacy analysis
+        privacy_service = get_privacy_service()
+        result = privacy_service.analyze_image_privacy(image_path)
+
+        # Update database
+        db.update_privacy_analysis(
+            image_id=image_id,
+            has_faces=result['has_faces'],
+            has_plates=result['has_plates'],
+            is_nsfw=result['is_nsfw'],
+            privacy_zones=result['privacy_zones']
+        )
+
+        return jsonify({
+            'success': True,
+            'image_id': image_id,
+            'has_faces': result['has_faces'],
+            'has_plates': result['has_plates'],
+            'is_nsfw': result['is_nsfw'],
+            'privacy_zones': result['privacy_zones'],
+            'zones_count': len(result['privacy_zones'])
+        })
+
+    except Exception as e:
+        print(f"Error analyzing privacy: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/images/<int:image_id>/privacy', methods=['GET'])
+def get_image_privacy(image_id):
+    """
+    Get privacy analysis data for an image
+    """
+    privacy_data = db.get_privacy_data(image_id)
+
+    if privacy_data is None:
+        return jsonify({
+            'analyzed': False,
+            'message': 'Image not analyzed for privacy yet'
+        })
+
+    return jsonify({
+        'analyzed': True,
+        'has_faces': privacy_data['has_faces'],
+        'has_plates': privacy_data['has_plates'],
+        'is_nsfw': privacy_data['is_nsfw'],
+        'privacy_zones': privacy_data['privacy_zones'],
+        'analyzed_at': privacy_data['privacy_analyzed_at']
+    })
+
+@app.route('/api/images/<int:image_id>/thumbnail/blur', methods=['GET'])
+def get_blurred_thumbnail(image_id):
+    """
+    Get thumbnail with privacy zones blurred
+    """
+    # Get size parameter
+    size = request.args.get('size', 500, type=int)
+    blur_strength = request.args.get('blur', 30, type=int)
+
+    image = db.get_image(image_id)
+
+    if not image:
+        return jsonify({'error': 'Image not found'}), 404
+
+    image_path = image['filepath']
+
+    if not os.path.exists(image_path):
+        return jsonify({'error': 'Image file not found'}), 404
+
+    # Get privacy zones
+    privacy_data = db.get_privacy_data(image_id)
+    zones = privacy_data['privacy_zones'] if privacy_data else []
+
+    try:
+        # Generate blurred thumbnail
+        privacy_service = get_privacy_service()
+        blurred_img = privacy_service.generate_privacy_thumbnail(
+            image_path,
+            zones,
+            size=size,
+            blur_strength=blur_strength
+        )
+
+        # Convert to bytes
+        img_io = io.BytesIO()
+        blurred_img.save(img_io, 'JPEG', quality=90)
+        img_io.seek(0)
+
+        return send_file(img_io, mimetype='image/jpeg')
+
+    except Exception as e:
+        print(f"Error generating blurred thumbnail: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/privacy/batch-analyze', methods=['POST'])
+def batch_analyze_privacy():
+    """
+    Batch analyze images for privacy
+    """
+    data = request.get_json()
+    image_ids = data.get('image_ids', [])
+
+    if not image_ids:
+        return jsonify({'error': 'No image IDs provided'}), 400
+
+    results = {
+        'success': [],
+        'failed': [],
+        'total': len(image_ids)
+    }
+
+    privacy_service = get_privacy_service()
+
+    for image_id in image_ids:
+        try:
+            image = db.get_image(image_id)
+
+            if not image or not os.path.exists(image['filepath']):
+                results['failed'].append({
+                    'id': image_id,
+                    'error': 'Image not found'
+                })
+                continue
+
+            # Analyze
+            result = privacy_service.analyze_image_privacy(image['filepath'])
+
+            # Update DB
+            db.update_privacy_analysis(
+                image_id=image_id,
+                has_faces=result['has_faces'],
+                has_plates=result['has_plates'],
+                is_nsfw=result['is_nsfw'],
+                privacy_zones=result['privacy_zones']
+            )
+
+            results['success'].append({
+                'id': image_id,
+                'has_faces': result['has_faces'],
+                'has_plates': result['has_plates'],
+                'zones_count': len(result['privacy_zones'])
+            })
+
+        except Exception as e:
+            results['failed'].append({
+                'id': image_id,
+                'error': str(e)
+            })
+
+    return jsonify(results)
+
+@app.route('/api/privacy/stats', methods=['GET'])
+def get_privacy_stats():
+    """
+    Get privacy statistics
+    """
+    # Get counts
+    images_with_faces = db.get_images_with_faces(limit=10000)
+    nsfw_images = db.get_nsfw_images(limit=10000)
+    unanalyzed = db.get_unanalyzed_privacy_images(limit=10000)
+
+    return jsonify({
+        'images_with_faces': len(images_with_faces),
+        'nsfw_images': len(nsfw_images),
+        'unanalyzed_images': len(unanalyzed)
+    })
 
 # ============ EXPORT/IMPORT DATA ============
 

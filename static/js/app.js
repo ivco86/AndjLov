@@ -3113,4 +3113,168 @@ document.getElementById('exportCsvBtn')?.addEventListener('click', () => exportD
 
 document.getElementById('importDataBtn')?.addEventListener('click', importData);
 
+// ============ PRIVACY FUNCTIONS ============
+
+// Privacy mode state
+let privacyModeEnabled = false;
+
+function openPrivacyModal() {
+    const modal = document.getElementById('privacyModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        loadPrivacyStats();
+    }
+}
+
+function closePrivacyModal() {
+    const modal = document.getElementById('privacyModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function loadPrivacyStats() {
+    try {
+        const response = await fetch('/api/privacy/stats');
+        const stats = await response.json();
+
+        document.getElementById('privacyStatFaces').textContent = stats.images_with_faces;
+        document.getElementById('privacyStatNSFW').textContent = stats.nsfw_images;
+        document.getElementById('privacyStatUnanalyzed').textContent = stats.unanalyzed_images;
+    } catch (error) {
+        console.error('Error loading privacy stats:', error);
+    }
+}
+
+async function analyzeImagePrivacy(imageId) {
+    try {
+        const response = await fetch(`/api/images/${imageId}/privacy/analyze`, {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            return result;
+        } else {
+            throw new Error(result.error || 'Privacy analysis failed');
+        }
+    } catch (error) {
+        console.error('Error analyzing privacy:', error);
+        throw error;
+    }
+}
+
+async function analyzeAllPrivacy() {
+    try {
+        showToast('Starting privacy analysis...', 'info');
+
+        // Get all unanalyzed images
+        const images = state.images.filter(img => !img.privacy_analyzed_at);
+
+        if (images.length === 0) {
+            showToast('All images already analyzed', 'info');
+            return;
+        }
+
+        const imageIds = images.map(img => img.id);
+
+        const response = await fetch('/api/privacy/batch-analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image_ids: imageIds })
+        });
+
+        const result = await response.json();
+
+        showToast(
+            `Privacy analysis complete: ${result.success.length} analyzed, ${result.failed.length} failed`,
+            result.failed.length > 0 ? 'warning' : 'success'
+        );
+
+        // Refresh stats
+        loadPrivacyStats();
+        await loadImages();
+
+    } catch (error) {
+        console.error('Error in batch privacy analysis:', error);
+        showToast(`Privacy analysis failed: ${error.message}`, 'error');
+    }
+}
+
+async function analyzeSelectedPrivacy() {
+    if (!state.selectionMode || state.selectedImages.size === 0) {
+        showToast('Please select images first', 'warning');
+        return;
+    }
+
+    try {
+        showToast('Analyzing selected images...', 'info');
+
+        const imageIds = Array.from(state.selectedImages);
+
+        const response = await fetch('/api/privacy/batch-analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image_ids: imageIds })
+        });
+
+        const result = await response.json();
+
+        showToast(
+            `Privacy analysis complete: ${result.success.length} analyzed, ${result.failed.length} failed`,
+            result.failed.length > 0 ? 'warning' : 'success'
+        );
+
+        // Refresh stats
+        loadPrivacyStats();
+        await loadImages();
+
+    } catch (error) {
+        console.error('Error in batch privacy analysis:', error);
+        showToast(`Privacy analysis failed: ${error.message}`, 'error');
+    }
+}
+
+function togglePrivacyMode() {
+    privacyModeEnabled = !privacyModeEnabled;
+
+    const checkbox = document.getElementById('privacyModeEnabled');
+    if (checkbox) {
+        checkbox.checked = privacyModeEnabled;
+    }
+
+    // Reload images with/without blur
+    renderImages();
+
+    showToast(
+        privacyModeEnabled ? 'Privacy mode enabled' : 'Privacy mode disabled',
+        'success'
+    );
+}
+
+// Update blur strength value display
+document.getElementById('blurStrength')?.addEventListener('input', (e) => {
+    document.getElementById('blurStrengthValue').textContent = e.target.value;
+});
+
+// Event listeners for privacy
+document.getElementById('privacyBtn')?.addEventListener('click', openPrivacyModal);
+document.getElementById('privacyClose')?.addEventListener('click', closePrivacyModal);
+document.getElementById('privacyOverlay')?.addEventListener('click', closePrivacyModal);
+
+document.getElementById('analyzeAllPrivacyBtn')?.addEventListener('click', analyzeAllPrivacy);
+document.getElementById('analyzeSelectedPrivacyBtn')?.addEventListener('click', analyzeSelectedPrivacy);
+
+document.getElementById('privacyModeEnabled')?.addEventListener('change', (e) => {
+    privacyModeEnabled = e.target.checked;
+    renderImages();
+    showToast(
+        privacyModeEnabled ? 'Privacy mode enabled' : 'Privacy mode disabled',
+        'success'
+    );
+});
+
 console.log('AI Gallery initialized ✨');

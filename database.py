@@ -83,12 +83,39 @@ class Database:
             cursor.execute("ALTER TABLE images ADD COLUMN media_type TEXT DEFAULT 'image'")
             conn.commit()
 
+        # Add privacy columns if they don't exist (migration)
+        cursor.execute("PRAGMA table_info(images)")
+        columns = [col[1] for col in cursor.fetchall()]
+
+        if 'has_faces' not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN has_faces BOOLEAN DEFAULT 0")
+            conn.commit()
+
+        if 'has_plates' not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN has_plates BOOLEAN DEFAULT 0")
+            conn.commit()
+
+        if 'is_nsfw' not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN is_nsfw BOOLEAN DEFAULT 0")
+            conn.commit()
+
+        if 'privacy_zones' not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN privacy_zones TEXT")
+            conn.commit()
+
+        if 'privacy_analyzed_at' not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN privacy_analyzed_at TIMESTAMP")
+            conn.commit()
+
         # Create indexes for performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_filepath ON images(filepath)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(is_favorite)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_analyzed ON images(analyzed_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_created ON images(created_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_media_type ON images(media_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_privacy_analyzed ON images(privacy_analyzed_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_has_faces ON images(has_faces)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_nsfw ON images(is_nsfw)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_boards_parent ON boards(parent_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_board_images_board ON board_images(board_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_board_images_image ON board_images(image_id)")
@@ -959,6 +986,122 @@ class Database:
             data['is_favorite'] = bool(data['is_favorite'])
         
         return data
+
+    # ============ PRIVACY OPERATIONS ============
+
+    def update_privacy_analysis(self, image_id: int, has_faces: bool = False,
+                                has_plates: bool = False, is_nsfw: bool = False,
+                                privacy_zones: List[Dict] = None):
+        """
+        Update image with privacy analysis results
+
+        Args:
+            image_id: Image ID
+            has_faces: Whether faces were detected
+            has_plates: Whether license plates were detected
+            is_nsfw: Whether NSFW content was detected
+            privacy_zones: List of zones to blur, format: [{"type": "face", "x": 100, "y": 50, "w": 80, "h": 80}, ...]
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        privacy_zones_json = json.dumps(privacy_zones) if privacy_zones else None
+
+        cursor.execute("""
+            UPDATE images
+            SET has_faces = ?, has_plates = ?, is_nsfw = ?,
+                privacy_zones = ?, privacy_analyzed_at = ?, updated_at = ?
+            WHERE id = ?
+        """, (has_faces, has_plates, is_nsfw, privacy_zones_json,
+              datetime.now(), datetime.now(), image_id))
+
+        conn.commit()
+        conn.close()
+
+    def get_privacy_data(self, image_id: int) -> Optional[Dict]:
+        """
+        Get privacy analysis data for an image
+
+        Returns:
+            Dictionary with privacy data or None if not analyzed
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT has_faces, has_plates, is_nsfw, privacy_zones, privacy_analyzed_at
+            FROM images
+            WHERE id = ?
+        """, (image_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            data = dict(result)
+            # Parse privacy_zones JSON
+            if data['privacy_zones']:
+                try:
+                    data['privacy_zones'] = json.loads(data['privacy_zones'])
+                except:
+                    data['privacy_zones'] = []
+            else:
+                data['privacy_zones'] = []
+
+            return data
+
+        return None
+
+    def get_unanalyzed_privacy_images(self, limit: int = 100) -> List[Dict]:
+        """Get images that haven't been privacy analyzed yet"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM images
+            WHERE privacy_analyzed_at IS NULL
+            ORDER BY created_at ASC
+            LIMIT ?
+        """, (limit,))
+
+        results = cursor.fetchall()
+        conn.close()
+
+        return [self._row_to_dict(row) for row in results]
+
+    def get_images_with_faces(self, limit: int = 100) -> List[Dict]:
+        """Get images that contain detected faces"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM images
+            WHERE has_faces = 1
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (limit,))
+
+        results = cursor.fetchall()
+        conn.close()
+
+        return [self._row_to_dict(row) for row in results]
+
+    def get_nsfw_images(self, limit: int = 100) -> List[Dict]:
+        """Get images flagged as NSFW"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM images
+            WHERE is_nsfw = 1
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (limit,))
+
+        results = cursor.fetchall()
+        conn.close()
+
+        return [self._row_to_dict(row) for row in results]
 
     # ============ EXPORT/IMPORT OPERATIONS ============
 
