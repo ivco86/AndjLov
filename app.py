@@ -1406,6 +1406,115 @@ def board_images(board_id):
             'action': 'removed'
         })
 
+# ============ EXPORT/IMPORT DATA ============
+
+@app.route('/api/export', methods=['GET'])
+def export_data():
+    """
+    Export gallery data in various formats
+
+    Query parameters:
+        format: json|markdown|csv (default: json)
+        include_images: true|false (default: true)
+        include_boards: true|false (default: true)
+    """
+    format_type = request.args.get('format', 'json').lower()
+    include_images = request.args.get('include_images', 'true').lower() == 'true'
+    include_boards = request.args.get('include_boards', 'true').lower() == 'true'
+
+    try:
+        if format_type == 'json':
+            data = db.export_data_json(include_images=include_images, include_boards=include_boards)
+
+            # Create response with proper headers for file download
+            from flask import Response
+            response = Response(data, mimetype='application/json')
+            response.headers['Content-Disposition'] = 'attachment; filename=gallery_export.json'
+            return response
+
+        elif format_type == 'markdown':
+            data = db.export_data_markdown(include_images=include_images, include_boards=include_boards)
+
+            from flask import Response
+            response = Response(data, mimetype='text/markdown')
+            response.headers['Content-Disposition'] = 'attachment; filename=gallery_export.md'
+            return response
+
+        elif format_type == 'csv':
+            csv_data = db.export_data_csv()
+
+            # Create a ZIP file with multiple CSV files
+            import zipfile
+            from io import BytesIO
+
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                if 'images_csv' in csv_data:
+                    zip_file.writestr('images.csv', csv_data['images_csv'])
+                if 'boards_csv' in csv_data:
+                    zip_file.writestr('boards.csv', csv_data['boards_csv'])
+                if 'board_images_csv' in csv_data:
+                    zip_file.writestr('board_images.csv', csv_data['board_images_csv'])
+
+            zip_buffer.seek(0)
+
+            from flask import Response
+            response = Response(zip_buffer.getvalue(), mimetype='application/zip')
+            response.headers['Content-Disposition'] = 'attachment; filename=gallery_export.zip'
+            return response
+
+        else:
+            return jsonify({'error': f'Unsupported format: {format_type}'}), 400
+
+    except Exception as e:
+        print(f"Export error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/import', methods=['POST'])
+def import_data():
+    """
+    Import gallery data from JSON export
+
+    Request body (JSON):
+        {
+            "data": "<json_export_data>",
+            "import_boards": true,
+            "import_board_assignments": true,
+            "update_existing": false
+        }
+    """
+    try:
+        request_data = request.get_json()
+
+        if not request_data or 'data' not in request_data:
+            return jsonify({'error': 'Missing data field in request'}), 400
+
+        json_data = request_data['data']
+        import_boards = request_data.get('import_boards', True)
+        import_board_assignments = request_data.get('import_board_assignments', True)
+        update_existing = request_data.get('update_existing', False)
+
+        # Perform import
+        result = db.import_data_json(
+            json_data=json_data,
+            import_boards=import_boards,
+            import_board_assignments=import_board_assignments,
+            update_existing=update_existing
+        )
+
+        if result.get('success'):
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 400
+
+    except Exception as e:
+        print(f"Import error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'success': False}), 500
+
 # ============ STATIC FILES ============
 
 @app.route('/favicon.ico')

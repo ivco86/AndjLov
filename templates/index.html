@@ -33,6 +33,7 @@
             <button class="btn btn-secondary" id="findDuplicatesBtn" aria-label="Find duplicate images">🔍 Find Duplicates</button>
             <button class="btn btn-secondary" id="analyzeBtn" aria-label="Analyze multiple images with AI">🤖 Analyze</button>
             <button class="btn btn-secondary" id="selectBtn" aria-label="Select multiple images">✓ Select</button>
+            <button class="btn btn-secondary" id="exportImportBtn" aria-label="Export/Import data">📦 Export/Import</button>
             <button class="btn btn-secondary" id="settingsBtn" aria-label="Open settings">⚙️ Settings</button>
         </div>
     </header>
@@ -595,6 +596,115 @@
                 <h2>🔍 Duplicate Images</h2>
                 <div id="duplicatesContent">
                     <!-- Duplicate groups will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export/Import Data Modal -->
+    <div class="modal" id="exportImportModal" style="display: none;">
+        <div class="modal-overlay" id="exportImportOverlay"></div>
+        <div class="modal-content modal-small">
+            <button class="modal-close" id="exportImportClose" aria-label="Close export/import modal">&times;</button>
+
+            <div class="modal-body">
+                <h2>📦 Export / Import Data</h2>
+
+                <div class="settings-section">
+                    <h3>📤 Export Data</h3>
+                    <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: var(--spacing-md);">
+                        Export your images, boards, and tags to use with AI tools like Gemini or Claude
+                    </p>
+
+                    <div class="form-group">
+                        <label>Export Format:</label>
+                        <div style="display: flex; gap: var(--spacing-sm); margin-bottom: var(--spacing-sm);">
+                            <button class="btn btn-secondary" id="exportJsonBtn">📄 JSON</button>
+                            <button class="btn btn-secondary" id="exportMarkdownBtn">📝 Markdown</button>
+                            <button class="btn btn-secondary" id="exportCsvBtn">📊 CSV</button>
+                        </div>
+                        <small style="color: var(--text-muted);">
+                            JSON - Best for AI APIs (Gemini, Claude)<br>
+                            Markdown - Human-readable, great for AI prompts<br>
+                            CSV - Spreadsheets and data analysis
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="exportIncludeImages" checked>
+                            Include images metadata
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="exportIncludeBoards" checked>
+                            Include boards structure
+                        </label>
+                    </div>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border-color); margin: var(--spacing-lg) 0;">
+
+                <div class="settings-section">
+                    <h3>📥 Import Data</h3>
+                    <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: var(--spacing-md);">
+                        Import board organization from AI suggestions or previous exports
+                    </p>
+
+                    <div class="form-group">
+                        <label for="importJsonData">Paste JSON data:</label>
+                        <textarea
+                            id="importJsonData"
+                            rows="6"
+                            placeholder='{"boards": [...], "version": "1.0"}'
+                            style="font-family: monospace; font-size: 0.875rem;"
+                        ></textarea>
+                        <small style="color: var(--text-muted);">
+                            Paste the JSON export or AI suggestions here
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="importBoards" checked>
+                            Import boards structure
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="importBoardAssignments" checked>
+                            Import image-to-board assignments
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="importUpdateExisting">
+                            Update existing items
+                        </label>
+                        <small style="color: var(--text-muted);">
+                            If unchecked, existing boards/images will be skipped
+                        </small>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-primary" id="importDataBtn">📥 Import Data</button>
+                    </div>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border-color); margin: var(--spacing-lg) 0;">
+
+                <div class="help-text">
+                    <p><strong>How to use with AI:</strong></p>
+                    <ol style="font-size: 0.875rem; color: var(--text-muted);">
+                        <li>Export your data (Markdown or JSON)</li>
+                        <li>Send to Gemini/Claude with prompt: "Suggest how to organize these images into boards"</li>
+                        <li>Copy AI's JSON response</li>
+                        <li>Import the suggestions back into AI Gallery</li>
+                    </ol>
                 </div>
             </div>
         </div>

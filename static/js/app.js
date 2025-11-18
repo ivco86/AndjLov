@@ -2965,4 +2965,152 @@ function closeDuplicatesModal() {
     if (modal) modal.style.display = 'none';
 }
 
+// ============ EXPORT/IMPORT DATA ============
+
+function openExportImportModal() {
+    const modal = document.getElementById('exportImportModal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function closeExportImportModal() {
+    const modal = document.getElementById('exportImportModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function exportData(format) {
+    const includeImages = document.getElementById('exportIncludeImages')?.checked ?? true;
+    const includeBoards = document.getElementById('exportIncludeBoards')?.checked ?? true;
+
+    try {
+        showToast(`Exporting data as ${format.toUpperCase()}...`, 'info');
+
+        const params = new URLSearchParams({
+            format: format,
+            include_images: includeImages,
+            include_boards: includeBoards
+        });
+
+        const response = await fetch(`/api/export?${params}`);
+
+        if (!response.ok) {
+            throw new Error(`Export failed: ${response.statusText}`);
+        }
+
+        // Get filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `gallery_export.${format}`;
+        if (contentDisposition) {
+            const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+            if (matches != null && matches[1]) {
+                filename = matches[1].replace(/['"]/g, '');
+            }
+        }
+
+        // Get the blob data
+        const blob = await response.blob();
+
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showToast(`Data exported successfully as ${filename}`, 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast(`Export failed: ${error.message}`, 'error');
+    }
+}
+
+async function importData() {
+    const jsonDataElement = document.getElementById('importJsonData');
+    const importBoardsElement = document.getElementById('importBoards');
+    const importBoardAssignmentsElement = document.getElementById('importBoardAssignments');
+    const updateExistingElement = document.getElementById('importUpdateExisting');
+
+    if (!jsonDataElement) {
+        showToast('Import form not found', 'error');
+        return;
+    }
+
+    const jsonData = jsonDataElement.value.trim();
+
+    if (!jsonData) {
+        showToast('Please paste JSON data to import', 'error');
+        return;
+    }
+
+    const importBoards = importBoardsElement?.checked ?? true;
+    const importBoardAssignments = importBoardAssignmentsElement?.checked ?? true;
+    const updateExisting = updateExistingElement?.checked ?? false;
+
+    try {
+        showToast('Importing data...', 'info');
+
+        const response = await fetch('/api/import', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                data: jsonData,
+                import_boards: importBoards,
+                import_board_assignments: importBoardAssignments,
+                update_existing: updateExisting
+            })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Import failed');
+        }
+
+        // Show success message with stats
+        const stats = [];
+        if (result.boards_created > 0) stats.push(`${result.boards_created} boards created`);
+        if (result.boards_updated > 0) stats.push(`${result.boards_updated} boards updated`);
+        if (result.images_updated > 0) stats.push(`${result.images_updated} images updated`);
+        if (result.board_assignments_created > 0) stats.push(`${result.board_assignments_created} assignments created`);
+
+        const message = stats.length > 0
+            ? `Import successful: ${stats.join(', ')}`
+            : 'Import completed';
+
+        showToast(message, 'success');
+
+        // Clear the textarea
+        jsonDataElement.value = '';
+
+        // Refresh the UI
+        await loadBoards();
+        await loadImages();
+        await loadStats();
+
+        // Close modal after a short delay
+        setTimeout(() => {
+            closeExportImportModal();
+        }, 1500);
+
+    } catch (error) {
+        console.error('Import error:', error);
+        showToast(`Import failed: ${error.message}`, 'error');
+    }
+}
+
+// Event listeners for export/import
+document.getElementById('exportImportBtn')?.addEventListener('click', openExportImportModal);
+document.getElementById('exportImportClose')?.addEventListener('click', closeExportImportModal);
+document.getElementById('exportImportOverlay')?.addEventListener('click', closeExportImportModal);
+
+document.getElementById('exportJsonBtn')?.addEventListener('click', () => exportData('json'));
+document.getElementById('exportMarkdownBtn')?.addEventListener('click', () => exportData('markdown'));
+document.getElementById('exportCsvBtn')?.addEventListener('click', () => exportData('csv'));
+
+document.getElementById('importDataBtn')?.addEventListener('click', importData);
+
 console.log('AI Gallery initialized ✨');

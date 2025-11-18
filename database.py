@@ -959,3 +959,342 @@ class Database:
             data['is_favorite'] = bool(data['is_favorite'])
         
         return data
+
+    # ============ EXPORT/IMPORT OPERATIONS ============
+
+    def export_data_json(self, include_images: bool = True, include_boards: bool = True) -> str:
+        """
+        Export all data as JSON string
+
+        Args:
+            include_images: Include image data in export
+            include_boards: Include board data in export
+
+        Returns:
+            JSON string with all data
+        """
+        export_data = {
+            'export_date': datetime.now().isoformat(),
+            'version': '1.0'
+        }
+
+        if include_images:
+            images = self.get_all_images(limit=10000)
+            export_data['images'] = images
+            export_data['total_images'] = len(images)
+
+        if include_boards:
+            boards = self.get_all_boards()
+            # Enrich boards with image IDs
+            for board in boards:
+                board_images = self.get_board_images(board['id'])
+                board['image_ids'] = [img['id'] for img in board_images]
+                board['image_count'] = len(board_images)
+
+            export_data['boards'] = boards
+            export_data['total_boards'] = len(boards)
+
+        # Get tags
+        export_data['tags'] = self.get_all_tags()
+
+        return json.dumps(export_data, indent=2, ensure_ascii=False)
+
+    def export_data_markdown(self, include_images: bool = True, include_boards: bool = True) -> str:
+        """
+        Export all data as Markdown format (human-readable, AI-friendly)
+
+        Args:
+            include_images: Include image data in export
+            include_boards: Include board data in export
+
+        Returns:
+            Markdown formatted string
+        """
+        md_lines = []
+        md_lines.append("# AI Gallery Export")
+        md_lines.append(f"\n**Export Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+        stats = self.get_stats()
+        md_lines.append("## Statistics")
+        md_lines.append(f"- Total Images: {stats['total_images']}")
+        md_lines.append(f"- Analyzed Images: {stats['analyzed_images']}")
+        md_lines.append(f"- Favorite Images: {stats['favorite_images']}")
+        md_lines.append(f"- Total Boards: {stats['total_boards']}\n")
+
+        if include_boards:
+            md_lines.append("## Boards\n")
+            boards = self.get_all_boards()
+
+            # Organize boards hierarchically
+            board_dict = {b['id']: b for b in boards}
+            root_boards = [b for b in boards if b['parent_id'] is None]
+
+            def render_board(board, level=0):
+                indent = "  " * level
+                lines = []
+                lines.append(f"{indent}### {'📁 ' * (level + 1)}{board['name']}")
+
+                if board['description']:
+                    lines.append(f"{indent}**Description:** {board['description']}")
+
+                # Get images in this board
+                board_images = self.get_board_images(board['id'])
+                lines.append(f"{indent}**Images:** {len(board_images)}")
+
+                if board_images:
+                    lines.append(f"{indent}**Image List:**")
+                    for img in board_images[:5]:  # Show first 5
+                        tags_str = ', '.join(img['tags'][:3]) if img['tags'] else 'no tags'
+                        lines.append(f"{indent}- `{img['filename']}` - {img['description'][:50] if img['description'] else 'No description'}... (Tags: {tags_str})")
+
+                    if len(board_images) > 5:
+                        lines.append(f"{indent}  _(and {len(board_images) - 5} more images)_")
+
+                lines.append("")
+
+                # Recursively render sub-boards
+                sub_boards = [b for b in boards if b['parent_id'] == board['id']]
+                for sub_board in sub_boards:
+                    lines.extend(render_board(sub_board, level + 1))
+
+                return lines
+
+            for root_board in root_boards:
+                md_lines.extend(render_board(root_board))
+
+        if include_images:
+            md_lines.append("\n## All Images\n")
+            images = self.get_all_images(limit=10000)
+
+            for img in images:
+                md_lines.append(f"### 🖼️ {img['filename']}")
+                md_lines.append(f"- **ID:** {img['id']}")
+                md_lines.append(f"- **Path:** `{img['filepath']}`")
+
+                if img['description']:
+                    md_lines.append(f"- **Description:** {img['description']}")
+
+                if img['tags']:
+                    md_lines.append(f"- **Tags:** {', '.join(img['tags'])}")
+
+                md_lines.append(f"- **Favorite:** {'⭐ Yes' if img['is_favorite'] else 'No'}")
+                md_lines.append(f"- **Analyzed:** {'✅ Yes' if img['analyzed_at'] else '❌ No'}")
+
+                # Show which boards contain this image
+                img_boards = self.get_image_boards(img['id'])
+                if img_boards:
+                    board_names = [b['name'] for b in img_boards]
+                    md_lines.append(f"- **Boards:** {', '.join(board_names)}")
+
+                md_lines.append("")
+
+        md_lines.append("\n## Tags\n")
+        tags = self.get_all_tags()
+        md_lines.append("| Tag | Usage Count |")
+        md_lines.append("|-----|-------------|")
+        for tag_info in tags[:50]:  # Top 50 tags
+            md_lines.append(f"| {tag_info['tag']} | {tag_info['count']} |")
+
+        return "\n".join(md_lines)
+
+    def export_data_csv(self) -> Dict[str, str]:
+        """
+        Export data as CSV format (separate CSV for images and boards)
+
+        Returns:
+            Dictionary with keys 'images_csv', 'boards_csv', 'board_images_csv'
+        """
+        import csv
+        from io import StringIO
+
+        result = {}
+
+        # Export images
+        images = self.get_all_images(limit=10000)
+        if images:
+            output = StringIO()
+            fieldnames = ['id', 'filename', 'filepath', 'description', 'tags', 'width', 'height',
+                         'file_size', 'is_favorite', 'analyzed_at', 'created_at']
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for img in images:
+                row = {k: img.get(k, '') for k in fieldnames}
+                # Convert tags list to string
+                row['tags'] = ', '.join(img['tags']) if img['tags'] else ''
+                writer.writerow(row)
+
+            result['images_csv'] = output.getvalue()
+
+        # Export boards
+        boards = self.get_all_boards()
+        if boards:
+            output = StringIO()
+            fieldnames = ['id', 'name', 'description', 'parent_id', 'image_count', 'created_at']
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for board in boards:
+                row = {k: board.get(k, '') for k in fieldnames}
+                # Add image count
+                board_images = self.get_board_images(board['id'])
+                row['image_count'] = len(board_images)
+                writer.writerow(row)
+
+            result['boards_csv'] = output.getvalue()
+
+        # Export board-image relationships
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT board_id, image_id, added_at FROM board_images")
+        relationships = cursor.fetchall()
+        conn.close()
+
+        if relationships:
+            output = StringIO()
+            fieldnames = ['board_id', 'image_id', 'added_at']
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for rel in relationships:
+                writer.writerow(dict(rel))
+
+            result['board_images_csv'] = output.getvalue()
+
+        return result
+
+    def import_data_json(self, json_data: str,
+                        import_boards: bool = True,
+                        import_board_assignments: bool = True,
+                        update_existing: bool = False) -> Dict:
+        """
+        Import data from JSON export
+
+        Args:
+            json_data: JSON string from export_data_json()
+            import_boards: Import board structure
+            import_board_assignments: Import which images belong to which boards
+            update_existing: Update existing images/boards or skip them
+
+        Returns:
+            Dictionary with import statistics
+        """
+        try:
+            data = json.loads(json_data)
+        except json.JSONDecodeError as e:
+            return {'error': f'Invalid JSON: {str(e)}', 'success': False}
+
+        stats = {
+            'boards_created': 0,
+            'boards_updated': 0,
+            'images_updated': 0,
+            'board_assignments_created': 0,
+            'errors': []
+        }
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # Import boards first (to establish hierarchy)
+        if import_boards and 'boards' in data:
+            # Map old board IDs to new board IDs
+            board_id_map = {}
+
+            # First pass: create all boards without parent relationships
+            boards_to_import = data['boards']
+
+            # Sort by parent_id (None first, then by ID) to create parents before children
+            boards_sorted = sorted(boards_to_import,
+                                  key=lambda b: (b.get('parent_id') is not None, b.get('parent_id') or 0))
+
+            for board_data in boards_sorted:
+                board_name = board_data.get('name')
+                board_desc = board_data.get('description')
+                old_parent_id = board_data.get('parent_id')
+
+                # Map parent ID if it exists
+                new_parent_id = board_id_map.get(old_parent_id) if old_parent_id else None
+
+                # Check if board already exists
+                cursor.execute("SELECT id FROM boards WHERE name = ?", (board_name,))
+                existing = cursor.fetchone()
+
+                if existing:
+                    if update_existing:
+                        board_id = existing['id']
+                        cursor.execute("""
+                            UPDATE boards SET description = ?, parent_id = ?, updated_at = ?
+                            WHERE id = ?
+                        """, (board_desc, new_parent_id, datetime.now(), board_id))
+                        stats['boards_updated'] += 1
+                        board_id_map[board_data['id']] = board_id
+                    else:
+                        # Skip, but still map the ID
+                        board_id_map[board_data['id']] = existing['id']
+                else:
+                    # Create new board
+                    cursor.execute("""
+                        INSERT INTO boards (name, description, parent_id)
+                        VALUES (?, ?, ?)
+                    """, (board_name, board_desc, new_parent_id))
+                    new_board_id = cursor.lastrowid
+                    board_id_map[board_data['id']] = new_board_id
+                    stats['boards_created'] += 1
+
+            conn.commit()
+
+            # Import board-image assignments
+            if import_board_assignments:
+                for board_data in boards_to_import:
+                    if 'image_ids' in board_data:
+                        old_board_id = board_data['id']
+                        new_board_id = board_id_map.get(old_board_id)
+
+                        if new_board_id:
+                            for image_id in board_data['image_ids']:
+                                try:
+                                    cursor.execute("""
+                                        INSERT INTO board_images (board_id, image_id)
+                                        VALUES (?, ?)
+                                    """, (new_board_id, image_id))
+                                    stats['board_assignments_created'] += 1
+                                except sqlite3.IntegrityError:
+                                    # Already exists, skip
+                                    pass
+
+                conn.commit()
+
+        # Note: We don't import image files themselves, only update metadata
+        # Images must already exist in the database
+        if 'images' in data and update_existing:
+            for img_data in data['images']:
+                image_id = img_data.get('id')
+                description = img_data.get('description')
+                tags = img_data.get('tags', [])
+                is_favorite = img_data.get('is_favorite', False)
+
+                # Check if image exists
+                cursor.execute("SELECT id FROM images WHERE id = ?", (image_id,))
+                if cursor.fetchone():
+                    # Update metadata
+                    cursor.execute("""
+                        UPDATE images
+                        SET description = ?, tags = ?, is_favorite = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (description, json.dumps(tags), is_favorite, datetime.now(), image_id))
+
+                    # Update FTS
+                    cursor.execute("""
+                        UPDATE images_fts
+                        SET description = ?, tags = ?
+                        WHERE rowid = ?
+                    """, (description, ' '.join(tags), image_id))
+
+                    stats['images_updated'] += 1
+
+            conn.commit()
+
+        conn.close()
+
+        stats['success'] = True
+        return stats
