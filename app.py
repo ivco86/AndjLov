@@ -121,6 +121,13 @@ DATA_DIR = os.environ.get('DATA_DIR', 'data')
 LM_STUDIO_URL = os.environ.get('LM_STUDIO_URL', 'http://localhost:1234')
 DATABASE_PATH = os.environ.get('DATABASE_PATH', 'data/gallery.db')
 
+# Helper function to get full file path
+def get_full_filepath(filepath):
+    """Convert relative filepath to absolute path"""
+    if os.path.isabs(filepath):
+        return filepath
+    return os.path.join(PHOTOS_DIR, filepath)
+
 # Supported image formats
 SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
 VIDEO_FORMATS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.m4v'}
@@ -369,7 +376,7 @@ def open_with_external_app(image_id):
         if not image:
             return jsonify({'error': 'Image not found'}), 404
 
-        filepath = image['filepath']
+        filepath = get_full_filepath(image['filepath'])
         if not os.path.exists(filepath):
             return jsonify({'error': 'File not found on disk'}), 404
 
@@ -599,7 +606,7 @@ def serve_image(image_id):
     if not image:
         return jsonify({'error': 'Image not found'}), 404
 
-    filepath = image['filepath']
+    filepath = get_full_filepath(image['filepath'])
 
     # Security: Validate filepath is within PHOTOS_DIR
     abs_filepath = os.path.abspath(filepath)
@@ -629,7 +636,7 @@ def serve_thumbnail(image_id):
     if not image:
         return jsonify({'error': 'Image not found'}), 404
 
-    filepath = image['filepath']
+    filepath = get_full_filepath(image['filepath'])
 
     # Security: Validate filepath is within PHOTOS_DIR
     abs_filepath = os.path.abspath(filepath)
@@ -728,29 +735,34 @@ def rename_image(image_id):
     image = db.get_image(image_id)
     if not image:
         return jsonify({'error': 'Image not found'}), 404
-    
-    old_path = image['filepath']
-    
+
+    old_path = get_full_filepath(image['filepath'])
+
     if not os.path.exists(old_path):
         return jsonify({'error': 'File not found on disk'}), 404
-    
+
     # Sanitize filename
     new_filename = secure_filename(new_filename)
-    
+
     # Keep same directory
     directory = os.path.dirname(old_path)
     new_path = os.path.join(directory, new_filename)
-    
+
     # Check if target exists
     if os.path.exists(new_path):
         return jsonify({'error': 'File with that name already exists'}), 409
-    
+
     try:
         # Rename file on disk
         os.rename(old_path, new_path)
-        
+
+        # Store relative path in database
+        abs_photos_dir = os.path.abspath(PHOTOS_DIR)
+        abs_new_path = os.path.abspath(new_path)
+        relative_new_path = os.path.relpath(abs_new_path, abs_photos_dir)
+
         # Update database
-        db.rename_image(image_id, new_path, new_filename)
+        db.rename_image(image_id, relative_new_path, new_filename)
         
         return jsonify({
             'success': True,
@@ -803,7 +815,7 @@ def analyze_image(image_id):
         if not image:
             return jsonify({'error': 'Image not found'}), 404
 
-        filepath = image['filepath']
+        filepath = get_full_filepath(image['filepath'])
         media_type = image.get('media_type', 'image')
 
         if not os.path.exists(filepath):
@@ -1035,24 +1047,29 @@ def scan_directory():
             ext = Path(filename).suffix.lower()
 
             if ext in ALL_MEDIA_FORMATS:
-                filepath = os.path.join(root, filename)
-                found_media.append(filepath)
+                full_filepath = os.path.join(root, filename)
+                found_media.append(full_filepath)
 
                 try:
-                    file_size = os.path.getsize(filepath)
+                    # Store relative path from PHOTOS_DIR
+                    abs_photos_dir = os.path.abspath(PHOTOS_DIR)
+                    abs_filepath = os.path.abspath(full_filepath)
+                    relative_path = os.path.relpath(abs_filepath, abs_photos_dir)
+
+                    file_size = os.path.getsize(full_filepath)
                     width = None
                     height = None
                     media_type = 'video' if ext in VIDEO_FORMATS else 'image'
 
                     # Get dimensions for images only
                     if media_type == 'image':
-                        img = Image.open(filepath)
+                        img = Image.open(full_filepath)
                         width, height = img.size
                         img.close()
 
-                    # Try to add to database
+                    # Try to add to database with relative path
                     image_id = db.add_image(
-                        filepath=filepath,
+                        filepath=relative_path,
                         filename=filename,
                         width=width,
                         height=height,
@@ -1064,14 +1081,14 @@ def scan_directory():
                         new_media.append({
                             'id': image_id,
                             'filename': filename,
-                            'filepath': filepath,
+                            'filepath': full_filepath,
                             'media_type': media_type
                         })
                     else:
                         skipped += 1
 
                 except Exception as e:
-                    print(f"Error processing {filepath}: {e}")
+                    print(f"Error processing {full_filepath}: {e}")
                     skipped += 1
 
     return jsonify({
@@ -1130,9 +1147,9 @@ def upload_image():
             width, height = img.size
             img.close()
 
-        # Add to database
+        # Add to database with just filename (relative to PHOTOS_DIR)
         image_id = db.add_image(
-            filepath=filepath,
+            filepath=filename,
             filename=filename,
             width=width,
             height=height,
@@ -1176,13 +1193,13 @@ def batch_analyze():
     renamed_count = 0
     
     for image in images:
-        filepath = image['filepath']
+        filepath = get_full_filepath(image['filepath'])
         image_id = image['id']
-        
+
         if not os.path.exists(filepath):
             failed_count += 1
             continue
-        
+
         result = ai.analyze_image(filepath)
         
         if result:
@@ -1718,9 +1735,7 @@ def open_image_folder(image_id):
         return jsonify({'error': 'Image not found'}), 404
 
     # Get full file path
-    filepath = image.get('filepath', '')
-    if not os.path.isabs(filepath):
-        filepath = os.path.join(PHOTOS_DIR, filepath)
+    filepath = get_full_filepath(image.get('filepath', ''))
 
     if not os.path.exists(filepath):
         return jsonify({'error': 'File not found on disk'}), 404
