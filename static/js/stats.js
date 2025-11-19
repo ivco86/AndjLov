@@ -318,3 +318,22 @@ function refreshStats() {
         showMessage('Statistics refreshed!', 'success');
     }, 500);
 }
+
+// ============ Initialize Event Listeners ============
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initStatsEventListeners);
+} else {
+    initStatsEventListeners();
+}
+
+function initStatsEventListeners() {
+    // Stats modal controls
+    document.getElementById('statsBtn')?.addEventListener('click', openStatsModal);
+    document.getElementById('statsClose')?.addEventListener('click', closeStatsModal);
+    document.getElementById('statsOverlay')?.addEventListener('click', closeStatsModal);
+
+    // Refresh button if it exists
+    document.getElementById('statsRefresh')?.addEventListener('click', refreshStats);
+}

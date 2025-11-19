@@ -3368,11 +3368,6 @@ document.getElementById('blurStrength')?.addEventListener('input', (e) => {
     document.getElementById('blurStrengthValue').textContent = e.target.value;
 });
 
-// Event listeners for stats dashboard
-document.getElementById('statsBtn')?.addEventListener('click', openStatsModal);
-document.getElementById('statsClose')?.addEventListener('click', closeStatsModal);
-document.getElementById('statsOverlay')?.addEventListener('click', closeStatsModal);
-
 // Event listeners for privacy
 document.getElementById('privacyBtn')?.addEventListener('click', openPrivacyModal);
 document.getElementById('privacyClose')?.addEventListener('click', closePrivacyModal);
