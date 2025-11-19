@@ -485,16 +485,6 @@ def open_with_external_app(image_id):
         traceback.print_exc()
         return jsonify({'error': f'Failed to open file: {str(e)}'}), 500
 
-# ============ EXTERNAL APPS API ============
-
-@app.route('/api/external-apps', methods=['GET'])
-def get_external_apps():
-    """Get list of external apps for dropdown menu"""
-    return jsonify({
-        'success': True,
-        'apps': EXTERNAL_APPS
-    })
-
 # ============ EXTERNAL APPS CONFIG API ============
 
 @app.route('/api/external-apps/config', methods=['GET'])
