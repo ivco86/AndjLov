@@ -1177,9 +1177,10 @@
     <!-- Workflow Automation Modal -->
     <div class="modal" id="workflowsModal" style="display: none;">
         <div class="modal-overlay" id="workflowsOverlay"></div>
-        <div class="modal-body" style="max-width: 1000px; max-height: 90vh; overflow-y: auto;">
-            <button class="modal-close" id="workflowsClose" aria-label="Close workflows modal">&times;</button>
-            <h2 style="margin-bottom: var(--spacing-lg);">⚡ Workflow Automation</h2>
+        <div class="modal-content" style="max-width: 1000px;">
+            <div class="modal-body" style="max-height: 90vh; overflow-y: auto;">
+                <button class="modal-close" id="workflowsClose" aria-label="Close workflows modal">&times;</button>
+                <h2 style="margin-bottom: var(--spacing-lg);">⚡ Workflow Automation</h2>
 
             <!-- Tabs -->
             <div class="workflow-tabs" style="display: flex; gap: var(--spacing-sm); margin-bottom: var(--spacing-lg); border-bottom: 2px solid var(--bg-secondary);">
@@ -1229,15 +1230,17 @@
                     <p>No executions yet</p>
                 </div>
             </div>
+            </div>
         </div>
     </div>
 
     <!-- Pipeline Builder Modal -->
     <div class="modal" id="pipelineBuilderModal" style="display: none;">
         <div class="modal-overlay" id="pipelineBuilderOverlay"></div>
-        <div class="modal-body" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
-            <button class="modal-close" id="pipelineBuilderClose" aria-label="Close pipeline builder">&times;</button>
-            <h2 style="margin-bottom: var(--spacing-lg);" id="pipelineBuilderTitle">Create Pipeline</h2>
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-body" style="max-height: 90vh; overflow-y: auto;">
+                <button class="modal-close" id="pipelineBuilderClose" aria-label="Close pipeline builder">&times;</button>
+                <h2 style="margin-bottom: var(--spacing-lg);" id="pipelineBuilderTitle">Create Pipeline</h2>
 
             <form id="pipelineBuilderForm">
                 <!-- Basic Info -->
@@ -1287,17 +1290,20 @@
                     <button type="submit" class="btn btn-primary" id="savePipelineBtn">Save Pipeline</button>
                 </div>
             </form>
+            </div>
         </div>
     </div>
 
     <!-- Action Selector Modal -->
     <div class="modal" id="actionSelectorModal" style="display: none;">
         <div class="modal-overlay" id="actionSelectorOverlay"></div>
-        <div class="modal-body" style="max-width: 600px;">
-            <button class="modal-close" id="actionSelectorClose" aria-label="Close action selector">&times;</button>
-            <h3 style="margin-bottom: var(--spacing-md);">Select Action</h3>
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-body">
+                <button class="modal-close" id="actionSelectorClose" aria-label="Close action selector">&times;</button>
+                <h3 style="margin-bottom: var(--spacing-md);">Select Action</h3>
 
-            <div id="availableActionsList" style="display: grid; gap: var(--spacing-sm);"></div>
+                <div id="availableActionsList" style="display: grid; gap: var(--spacing-sm);"></div>
+            </div>
         </div>
     </div>
 
