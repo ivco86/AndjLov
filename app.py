@@ -748,10 +748,13 @@ def telegram_send_image():
 
         # Prepare caption
         caption_parts = []
+        media_type = image.get('media_type', 'image')
+        is_video = media_type == 'video'
+
         if image.get('title') and image['title'] != image['filename']:
-            caption_parts.append(f"📷 {image['title']}")
+            caption_parts.append(f"{'🎬' if is_video else '📷'} {image['title']}")
         else:
-            caption_parts.append(f"📷 {image['filename']}")
+            caption_parts.append(f"{'🎬' if is_video else '📷'} {image['filename']}")
 
         if image.get('description'):
             caption_parts.append(f"\n{image['description']}")
@@ -762,25 +765,41 @@ def telegram_send_image():
 
         caption = ''.join(caption_parts)
 
-        # Send photo via Telegram Bot API
-        url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+        # Send media via Telegram Bot API
+        if is_video:
+            # Send as video
+            url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
 
-        with open(resolved_path, 'rb') as photo_file:
-            files = {'photo': photo_file}
-            payload = {
-                'chat_id': target_chat_id,
-                'caption': caption[:1024]  # Telegram caption limit
-            }
+            with open(resolved_path, 'rb') as video_file:
+                files = {'video': video_file}
+                payload = {
+                    'chat_id': target_chat_id,
+                    'caption': caption[:1024],  # Telegram caption limit
+                    'supports_streaming': True
+                }
 
-            response = req.post(url, data=payload, files=files, timeout=30)
+                response = req.post(url, data=payload, files=files, timeout=60)
+        else:
+            # Send as photo
+            url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+
+            with open(resolved_path, 'rb') as photo_file:
+                files = {'photo': photo_file}
+                payload = {
+                    'chat_id': target_chat_id,
+                    'caption': caption[:1024]  # Telegram caption limit
+                }
+
+                response = req.post(url, data=payload, files=files, timeout=30)
 
         if response.status_code == 200:
             result = response.json()
             if result.get('ok'):
-                print(f"[TELEGRAM] Sent image {image['filename']} to chat {target_chat_id}")
+                media_label = 'video' if is_video else 'image'
+                print(f"[TELEGRAM] Sent {media_label} {image['filename']} to chat {target_chat_id}")
                 return jsonify({
                     'success': True,
-                    'message': f'Image sent to Telegram successfully!',
+                    'message': f'{media_label.capitalize()} sent to Telegram successfully!',
                     'telegram_message_id': result['result'].get('message_id')
                 })
             else:

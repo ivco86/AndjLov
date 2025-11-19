@@ -307,7 +307,7 @@ function closeStatsModal() {
 // ============ Refresh Stats ============
 
 function refreshStats() {
-    showMessage('Refreshing statistics...', 'info');
+    showToast('Refreshing statistics...', 'info');
 
     loadStatsOverview();
     loadTimelineStats();
@@ -315,7 +315,7 @@ function refreshStats() {
     loadActivityStats();
 
     setTimeout(() => {
-        showMessage('Statistics refreshed!', 'success');
+        showToast('Statistics refreshed!', 'success');
     }, 500);
 }
 
