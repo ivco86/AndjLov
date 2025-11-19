@@ -30,6 +30,9 @@ const state = {
     imageSort: 'date-desc'
 };
 
+// Export state to window for module integration
+window.appState = state;
+
 // Constants
 const CONFIG = {
     MIN_IMAGE_HEIGHT: 180,
@@ -82,20 +85,20 @@ async function apiCall(endpoint, options = {}) {
             },
             ...options
         });
-        
+
         if (!response.ok) {
             let errorMessage = 'API request failed';
-            
+
             try {
                 const error = await response.json();
                 errorMessage = error.error || error.message || errorMessage;
             } catch (e) {
                 errorMessage = `HTTP ${response.status}: ${response.statusText}`;
             }
-            
+
             throw new Error(errorMessage);
         }
-        
+
         return await response.json();
     } catch (error) {
         console.error('API Error:', error);
@@ -103,6 +106,9 @@ async function apiCall(endpoint, options = {}) {
         throw error;
     }
 }
+
+// Export apiCall to window for module integration
+window.apiCall = apiCall;
 
 async function checkHealth() {
     try {
@@ -2209,13 +2215,13 @@ function hideLoading() {
 function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
     if (!container) return;
-    
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.textContent = message;
-    
+
     container.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.style.animation = 'slideOut 0.3s ease';
         setTimeout(() => {
@@ -2225,6 +2231,9 @@ function showToast(message, type = 'success') {
         }, 300);
     }, CONFIG.TOAST_DURATION_MS);
 }
+
+// Export showToast to window for module integration
+window.showToast = showToast;
 
 function formatFileSize(bytes) {
     if (bytes === 0) return '0 Bytes';

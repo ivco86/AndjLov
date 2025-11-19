@@ -3,6 +3,40 @@
  * Handles pipeline creation, execution, and monitoring
  */
 
+// ============ DEPENDENCY CHECKS ============
+
+// Wait for dependencies to be available
+function waitForDependencies() {
+    return new Promise((resolve) => {
+        const checkDeps = () => {
+            if (window.apiCall && window.appState) {
+                resolve();
+            } else {
+                setTimeout(checkDeps, 100);
+            }
+        };
+        checkDeps();
+    });
+}
+
+// Safe API call wrapper
+async function safeApiCall(endpoint, options = {}) {
+    if (!window.apiCall) {
+        console.error('API call function not available. Make sure app.js is loaded first.');
+        throw new Error('App dependencies not loaded');
+    }
+    return await window.apiCall(endpoint, options);
+}
+
+// Get app state safely
+function getAppState() {
+    if (!window.appState) {
+        console.error('App state not available. Make sure app.js is loaded first.');
+        return { selectedImages: new Set() };
+    }
+    return window.appState;
+}
+
 // ============ STATE MANAGEMENT ============
 
 const workflowState = {
@@ -68,8 +102,7 @@ async function loadWorkflowData() {
 
 async function loadPipelines() {
     try {
-        const response = await fetch('/api/pipelines');
-        const data = await response.json();
+        const data = await safeApiCall('/pipelines');
 
         if (data.success) {
             workflowState.pipelines = data.pipelines;
@@ -125,33 +158,31 @@ function getTriggerLabel(triggerType) {
 }
 
 async function runPipeline(pipelineId) {
-    const imageIds = Array.from(state.selectedImages);
+    const appState = getAppState();
+    const imageIds = Array.from(appState.selectedImages);
 
     if (imageIds.length === 0) {
-        showMessage('Please select at least one image', 'error');
+        showToast('Please select at least one image', 'error');
         return;
     }
 
     if (!confirm(`Run pipeline on ${imageIds.length} image(s)?`)) return;
 
     try {
-        const response = await fetch(`/api/pipelines/${pipelineId}/execute`, {
+        const data = await safeApiCall(`/pipelines/${pipelineId}/execute`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ image_ids: imageIds })
         });
 
-        const data = await response.json();
-
         if (data.success) {
-            showMessage(`Pipeline completed! ${data.successful} successful, ${data.failed} failed`, 'success');
+            showToast(`Pipeline completed! ${data.successful} successful, ${data.failed} failed`, 'success');
             loadPipelines();
         } else {
-            showMessage('Error: ' + data.error, 'error');
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error running pipeline:', error);
-        showMessage('Error running pipeline', 'error');
+        showToast('Error running pipeline', 'error');
     }
 }
 
@@ -159,21 +190,20 @@ async function deletePipeline(pipelineId) {
     if (!confirm('Delete this pipeline?')) return;
 
     try {
-        const response = await fetch(`/api/pipelines/${pipelineId}`, {
+        const data = await safeApiCall(`/pipelines/${pipelineId}`, {
             method: 'DELETE'
         });
 
-        const data = await response.json();
 
         if (data.success) {
-            showMessage('Pipeline deleted', 'success');
+            showToast('Pipeline deleted', 'success');
             loadPipelines();
         } else {
-            showMessage('Error deleting pipeline', 'error');
+            showToast('Error deleting pipeline', 'error');
         }
     } catch (error) {
         console.error('Error deleting pipeline:', error);
-        showMessage('Error deleting pipeline', 'error');
+        showToast('Error deleting pipeline', 'error');
     }
 }
 
@@ -195,8 +225,7 @@ function openPipelineBuilder() {
 
 async function editPipeline(pipelineId) {
     try {
-        const response = await fetch(`/api/pipelines/${pipelineId}`);
-        const data = await response.json();
+        const data = await safeApiCall(`/pipelines/${pipelineId}`);
 
         if (data.success) {
             const pipeline = data.pipeline;
@@ -214,7 +243,7 @@ async function editPipeline(pipelineId) {
         }
     } catch (error) {
         console.error('Error loading pipeline:', error);
-        showMessage('Error loading pipeline', 'error');
+        showToast('Error loading pipeline', 'error');
     }
 }
 
@@ -234,12 +263,12 @@ async function savePipeline(event) {
     const actions = workflowState.currentPipeline.actions;
 
     if (!name) {
-        showMessage('Pipeline name is required', 'error');
+        showToast('Pipeline name is required', 'error');
         return;
     }
 
     if (actions.length === 0) {
-        showMessage('Add at least one action', 'error');
+        showToast('Add at least one action', 'error');
         return;
     }
 
@@ -257,32 +286,31 @@ async function savePipeline(event) {
 
         if (workflowState.editingPipeline) {
             // Update existing
-            response = await fetch(`/api/pipelines/${workflowState.editingPipeline.id}`, {
+            response = await safeApiCall(`/pipelines/${workflowState.editingPipeline.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(pipelineData)
             });
         } else {
             // Create new
-            response = await fetch('/api/pipelines', {
+            response = await safeApiCall('/pipelines', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(pipelineData)
             });
         }
 
-        const data = await response.json();
 
         if (data.success) {
-            showMessage('Pipeline saved!', 'success');
+            showToast('Pipeline saved!', 'success');
             closePipelineBuilder();
             loadPipelines();
         } else {
-            showMessage('Error: ' + data.error, 'error');
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error saving pipeline:', error);
-        showMessage('Error saving pipeline', 'error');
+        showToast('Error saving pipeline', 'error');
     }
 }
 
@@ -290,8 +318,7 @@ async function savePipeline(event) {
 
 async function loadAvailableActions() {
     try {
-        const response = await fetch('/api/pipelines/actions');
-        const data = await response.json();
+        const data = await safeApiCall('/pipelines/actions');
 
         if (data.success) {
             workflowState.availableActions = data.actions;
@@ -388,8 +415,7 @@ function moveAction(index, direction) {
 
 async function loadTemplates() {
     try {
-        const response = await fetch('/api/pipelines/templates');
-        const data = await response.json();
+        const data = await safeApiCall('/pipelines/templates');
 
         if (data.success) {
             workflowState.templates = data.templates;
@@ -420,21 +446,20 @@ function renderTemplates() {
 
 async function useTemplate(templateId) {
     try {
-        const response = await fetch(`/api/pipelines/templates/${templateId}`, {
+        const data = await safeApiCall(`/pipelines/templates/${templateId}`, {
             method: 'POST'
         });
 
-        const data = await response.json();
 
         if (data.success) {
-            showMessage('Pipeline created from template!', 'success');
+            showToast('Pipeline created from template!', 'success');
             switchWorkflowTab('pipelines');
         } else {
-            showMessage('Error: ' + data.error, 'error');
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error using template:', error);
-        showMessage('Error using template', 'error');
+        showToast('Error using template', 'error');
     }
 }
 
@@ -442,8 +467,7 @@ async function useTemplate(templateId) {
 
 async function loadExecutionLogs() {
     try {
-        const response = await fetch('/api/executions/recent?limit=50');
-        const data = await response.json();
+        const data = await safeApiCall('/executions/recent?limit=50');
 
         if (data.success) {
             workflowState.executions = data.executions;
