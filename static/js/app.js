@@ -2678,8 +2678,12 @@ async function loadExternalAppsConfig() {
         const response = await fetch('/api/external-apps/config');
         const data = await response.json();
 
+        console.log('External apps config loaded:', data);
+
         if (data.success) {
             renderExternalAppsList(data.config, data.custom_paths || {});
+        } else {
+            console.error('Failed to load external apps config:', data.error);
         }
     } catch (error) {
         console.error('Error loading external apps config:', error);
@@ -2687,14 +2691,22 @@ async function loadExternalAppsConfig() {
 }
 
 function renderExternalAppsList(config, customPaths) {
+    console.log('Rendering external apps list:', config, customPaths);
+
     const imageAppsList = document.getElementById('imageAppsList');
     const videoAppsList = document.getElementById('videoAppsList');
 
-    if (!imageAppsList || !videoAppsList) return;
+    console.log('imageAppsList element:', imageAppsList);
+    console.log('videoAppsList element:', videoAppsList);
+
+    if (!imageAppsList || !videoAppsList) {
+        console.error('External apps list elements not found!');
+        return;
+    }
 
     // Render image apps
     imageAppsList.innerHTML = config.image.map(app => {
-        const customPath = customPaths.image?.[app.id] || '';
+        const customPath = (customPaths.image && customPaths.image[app.id]) || '';
         return `
             <div class="form-group" style="margin-bottom: var(--spacing-sm);">
                 <label for="app-image-${app.id}">${app.name}</label>
@@ -2714,7 +2726,7 @@ function renderExternalAppsList(config, customPaths) {
 
     // Render video apps
     videoAppsList.innerHTML = config.video.map(app => {
-        const customPath = customPaths.video?.[app.id] || '';
+        const customPath = (customPaths.video && customPaths.video[app.id]) || '';
         return `
             <div class="form-group" style="margin-bottom: var(--spacing-sm);">
                 <label for="app-video-${app.id}">${app.name}</label>
@@ -2762,7 +2774,7 @@ async function saveExternalAppsConfig() {
         if (data.success) {
             showMessage('✅ External app paths saved successfully!', 'success');
             // Reload external apps in state
-            await loadInitialExternalApps();
+            await loadExternalApps();
         } else {
             showMessage('❌ Error saving app paths: ' + (data.error || 'Unknown error'), 'error');
         }
