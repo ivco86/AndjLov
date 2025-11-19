@@ -3702,16 +3702,16 @@ setTimeout(() => {
 
 async function sendImageToTelegram(imageId) {
     try {
-        showMessage('Sending image to Telegram...', 'info');
+        showToast('Sending image to Telegram...', 'info');
 
         const data = await apiCall('/telegram/send-image', {
             method: 'POST',
             body: JSON.stringify({ image_id: imageId })
         });
 
-        showMessage('✅ ' + data.message, 'success');
+        showToast('✅ ' + data.message, 'success');
     } catch (error) {
-        showMessage('❌ ' + error.message, 'error');
+        showToast('❌ ' + error.message, 'error');
     }
 }
 
