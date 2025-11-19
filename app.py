@@ -520,6 +520,8 @@ def get_external_apps_config():
                     app_config['custom_path'] = custom_path
                 config[media_type].append(app_config)
 
+        print(f"[EXTERNAL_APPS_CONFIG] Returning {len(config['image'])} image apps, {len(config['video'])} video apps")
+
         return jsonify({
             'success': True,
             'config': config,
@@ -527,6 +529,8 @@ def get_external_apps_config():
         })
     except Exception as e:
         print(f"Error getting external apps config: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/external-apps/config', methods=['POST'])

@@ -2577,7 +2577,11 @@ function openSettingsModal() {
     loadBotStatus();
     loadBotConfig();
     loadEmailConfig();
-    loadExternalAppsConfig();
+
+    // Load external apps config after a short delay to ensure DOM is ready
+    setTimeout(() => {
+        loadExternalAppsConfig();
+    }, 100);
 }
 
 function closeSettingsModal() {
