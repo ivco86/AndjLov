@@ -41,6 +41,8 @@ from ai_service import AIService
 from pdf_catalog import PDFCatalogGenerator
 from export_utils import MetadataExporter, BoardExporter
 from reverse_image_search import ReverseImageSearch, get_copyright_tips, get_usage_detection_tips
+from exif_utils import extract_exif_data, get_readable_exif_summary
+from embeddings_utils import get_embeddings_generator, search_by_text, search_by_image
 
 # Helper functions for video processing
 def extract_video_frame(video_path, output_path, time_sec=1.0):
@@ -1338,6 +1340,15 @@ def scan_directory():
                             'filepath': full_filepath,
                             'media_type': media_type
                         })
+
+                        # Extract EXIF data for images
+                        if media_type == 'image':
+                            try:
+                                exif_data = extract_exif_data(full_filepath)
+                                if exif_data:
+                                    db.save_exif_data(image_id, exif_data)
+                            except Exception as e:
+                                print(f"Error extracting EXIF from {filename}: {e}")
                     else:
                         skipped += 1
 
@@ -1410,6 +1421,15 @@ def upload_image():
             file_size=file_size,
             media_type=media_type
         )
+
+        # Extract EXIF data for images
+        if media_type == 'image' and image_id:
+            try:
+                exif_data = extract_exif_data(filepath)
+                if exif_data:
+                    db.save_exif_data(image_id, exif_data)
+            except Exception as e:
+                print(f"Error extracting EXIF from uploaded {filename}: {e}")
 
         return jsonify({
             'success': True,
@@ -2419,6 +2439,271 @@ def get_recent_executions():
     except Exception as e:
         print(f"Error loading executions: {e}")
         return jsonify({'success': False, 'error': str(e), 'executions': []}), 500
+
+# ============ EXIF DATA ============
+
+@app.route('/api/images/<int:image_id>/exif', methods=['GET'])
+def get_image_exif(image_id):
+    """Get EXIF data for an image"""
+    try:
+        exif_data = db.get_exif_data(image_id)
+
+        if not exif_data:
+            return jsonify({
+                'success': False,
+                'error': 'No EXIF data found',
+                'has_exif': False
+            }), 404
+
+        # Add readable summary
+        exif_data['summary'] = get_readable_exif_summary(exif_data)
+
+        return jsonify({
+            'success': True,
+            'exif': exif_data,
+            'has_exif': True
+        })
+    except Exception as e:
+        print(f"Error fetching EXIF data: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/<int:image_id>/exif/extract', methods=['POST'])
+def extract_image_exif(image_id):
+    """Extract and save EXIF data for an image"""
+    try:
+        # Get image from database
+        image = db.get_image(image_id)
+        if not image:
+            return jsonify({'success': False, 'error': 'Image not found'}), 404
+
+        # Get full path
+        image_path = os.path.join(PHOTOS_DIR, image['filepath'])
+        if not os.path.exists(image_path):
+            return jsonify({'success': False, 'error': 'File not found on disk'}), 404
+
+        # Extract EXIF
+        exif_data = extract_exif_data(image_path)
+
+        if not exif_data:
+            return jsonify({
+                'success': False,
+                'error': 'No EXIF data found in image',
+                'has_exif': False
+            })
+
+        # Save to database
+        success = db.save_exif_data(image_id, exif_data)
+
+        if success:
+            exif_data['summary'] = get_readable_exif_summary(exif_data)
+            return jsonify({
+                'success': True,
+                'exif': exif_data,
+                'has_exif': True
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Failed to save EXIF data'}), 500
+
+    except Exception as e:
+        print(f"Error extracting EXIF data: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/search/exif', methods=['POST'])
+def search_by_exif():
+    """Search images by EXIF criteria"""
+    try:
+        filters = request.get_json()
+
+        if not filters:
+            return jsonify({'success': False, 'error': 'No search filters provided'}), 400
+
+        images = db.search_images_by_exif(filters)
+
+        return jsonify({
+            'success': True,
+            'count': len(images),
+            'images': images
+        })
+    except Exception as e:
+        print(f"Error searching by EXIF: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/exif/cameras', methods=['GET'])
+def get_camera_list():
+    """Get list of unique cameras in the collection"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT DISTINCT camera_make, camera_model, COUNT(*) as count
+            FROM exif_data
+            WHERE camera_make IS NOT NULL OR camera_model IS NOT NULL
+            GROUP BY camera_make, camera_model
+            ORDER BY count DESC
+        """)
+
+        cameras = []
+        for row in cursor.fetchall():
+            cameras.append({
+                'make': row['camera_make'],
+                'model': row['camera_model'],
+                'count': row['count']
+            })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'cameras': cameras
+        })
+    except Exception as e:
+        print(f"Error fetching camera list: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============ EMBEDDINGS & SEMANTIC SEARCH ============
+
+@app.route('/api/embeddings/status', methods=['GET'])
+def embeddings_status():
+    """Check if embeddings functionality is available"""
+    generator = get_embeddings_generator()
+
+    return jsonify({
+        'success': True,
+        'available': generator.is_available(),
+        'model': generator.model_name if generator.is_available() else None
+    })
+
+@app.route('/api/embeddings/generate', methods=['POST'])
+def generate_embeddings():
+    """Generate embeddings for specified images or all unprocessed images"""
+    try:
+        generator = get_embeddings_generator()
+
+        if not generator.is_available():
+            return jsonify({
+                'success': False,
+                'error': 'Embeddings model not available. Install transformers and torch first.'
+            }), 503
+
+        data = request.get_json()
+        image_ids = data.get('image_ids', [])
+
+        # If no IDs specified, get all images without embeddings
+        if not image_ids:
+            # Get all images
+            all_images = db.get_images()
+            # Filter out images that already have embeddings
+            existing_embeddings = {e['image_id'] for e in db.get_all_embeddings()}
+            image_ids = [img['id'] for img in all_images if img['id'] not in existing_embeddings]
+
+        if not image_ids:
+            return jsonify({
+                'success': True,
+                'message': 'All images already have embeddings',
+                'processed': 0
+            })
+
+        processed = 0
+        errors = 0
+
+        for image_id in image_ids:
+            try:
+                # Get image
+                image = db.get_image(image_id)
+                if not image:
+                    continue
+
+                # Get full path
+                image_path = os.path.join(PHOTOS_DIR, image['filepath'])
+                if not os.path.exists(image_path):
+                    continue
+
+                # Generate embedding
+                embedding_blob = generator.generate_image_embedding(image_path)
+
+                if embedding_blob:
+                    # Save to database
+                    db.save_embedding(image_id, 'clip-vit-base-patch32', embedding_blob)
+                    processed += 1
+                else:
+                    errors += 1
+
+            except Exception as e:
+                print(f"Error processing image {image_id}: {e}")
+                errors += 1
+
+        return jsonify({
+            'success': True,
+            'processed': processed,
+            'errors': errors,
+            'total': len(image_ids)
+        })
+
+    except Exception as e:
+        print(f"Error generating embeddings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/search/semantic', methods=['POST'])
+def semantic_search():
+    """Search images using natural language query"""
+    try:
+        generator = get_embeddings_generator()
+
+        if not generator.is_available():
+            return jsonify({
+                'success': False,
+                'error': 'Semantic search not available. Install transformers and torch first.'
+            }), 503
+
+        data = request.get_json()
+        query = data.get('query', '')
+        top_k = data.get('top_k', 20)
+
+        if not query:
+            return jsonify({'success': False, 'error': 'Query text required'}), 400
+
+        # Perform semantic search
+        results = search_by_text(db, query, top_k=top_k)
+
+        return jsonify({
+            'success': True,
+            'query': query,
+            'count': len(results),
+            'images': results
+        })
+
+    except Exception as e:
+        print(f"Error in semantic search: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/<int:image_id>/similar', methods=['GET'])
+def find_similar_images(image_id):
+    """Find visually similar images"""
+    try:
+        generator = get_embeddings_generator()
+
+        if not generator.is_available():
+            return jsonify({
+                'success': False,
+                'error': 'Similarity search not available. Install transformers and torch first.'
+            }), 503
+
+        top_k = request.args.get('top_k', 20, type=int)
+
+        # Perform similarity search
+        results = search_by_image(db, image_id, top_k=top_k)
+
+        return jsonify({
+            'success': True,
+            'image_id': image_id,
+            'count': len(results),
+            'similar_images': results
+        })
+
+    except Exception as e:
+        print(f"Error finding similar images: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ============ STATIC FILES ============
 

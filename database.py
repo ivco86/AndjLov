@@ -75,7 +75,69 @@ class Database:
                 UNIQUE(board_id, image_id)
             )
         """)
-        
+
+        # Image Embeddings for semantic search
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS image_embeddings (
+                image_id INTEGER PRIMARY KEY,
+                model_name TEXT NOT NULL,
+                vector BLOB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            )
+        """)
+
+        # EXIF data for images
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS exif_data (
+                image_id INTEGER PRIMARY KEY,
+                camera_make TEXT,
+                camera_model TEXT,
+                lens TEXT,
+                iso INTEGER,
+                aperture REAL,
+                shutter_speed TEXT,
+                focal_length REAL,
+                capture_date TIMESTAMP,
+                gps_lat REAL,
+                gps_lon REAL,
+                orientation INTEGER,
+                flash TEXT,
+                white_balance TEXT,
+                metering_mode TEXT,
+                exposure_mode TEXT,
+                software TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Color analysis for images
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS image_colors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                image_id INTEGER NOT NULL,
+                hex_color TEXT NOT NULL,
+                percentage REAL,
+                is_dominant BOOLEAN DEFAULT 0,
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Audit log for tracking changes
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                action TEXT NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                triggered_by TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Add media_type column if it doesn't exist (migration)
         cursor.execute("PRAGMA table_info(images)")
         columns = [col[1] for col in cursor.fetchall()]
@@ -92,7 +154,16 @@ class Database:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_boards_parent ON boards(parent_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_board_images_board ON board_images(board_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_board_images_image ON board_images(image_id)")
-        
+
+        # Indexes for new tables
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_model ON image_embeddings(model_name)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_exif_camera ON exif_data(camera_make, camera_model)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_exif_capture_date ON exif_data(capture_date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_colors_image ON image_colors(image_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_colors_dominant ON image_colors(is_dominant)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp)")
+
         # Full-text search index - check if needs migration
         cursor.execute("""
             SELECT sql FROM sqlite_master 
@@ -957,5 +1028,320 @@ class Database:
         # Convert boolean
         if 'is_favorite' in data:
             data['is_favorite'] = bool(data['is_favorite'])
-        
+
         return data
+
+    # ============ EXIF DATA OPERATIONS ============
+
+    def save_exif_data(self, image_id: int, exif_dict: Dict) -> bool:
+        """Save EXIF data for an image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO exif_data (
+                    image_id, camera_make, camera_model, lens, iso, aperture,
+                    shutter_speed, focal_length, capture_date, gps_lat, gps_lon,
+                    orientation, flash, white_balance, metering_mode, exposure_mode, software
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                image_id,
+                exif_dict.get('camera_make'),
+                exif_dict.get('camera_model'),
+                exif_dict.get('lens'),
+                exif_dict.get('iso'),
+                exif_dict.get('aperture'),
+                exif_dict.get('shutter_speed'),
+                exif_dict.get('focal_length'),
+                exif_dict.get('capture_date'),
+                exif_dict.get('gps_lat'),
+                exif_dict.get('gps_lon'),
+                exif_dict.get('orientation'),
+                exif_dict.get('flash'),
+                exif_dict.get('white_balance'),
+                exif_dict.get('metering_mode'),
+                exif_dict.get('exposure_mode'),
+                exif_dict.get('software')
+            ))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving EXIF data: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_exif_data(self, image_id: int) -> Optional[Dict]:
+        """Get EXIF data for an image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("SELECT * FROM exif_data WHERE image_id = ?", (image_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def search_images_by_exif(self, filters: Dict) -> List[Dict]:
+        """Search images by EXIF criteria
+
+        Example filters:
+        {
+            'camera_make': 'Canon',
+            'min_iso': 400,
+            'max_iso': 1600,
+            'min_aperture': 1.4,
+            'focal_length': 50
+        }
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            query = """
+                SELECT i.* FROM images i
+                JOIN exif_data e ON i.id = e.image_id
+                WHERE 1=1
+            """
+            params = []
+
+            if 'camera_make' in filters:
+                query += " AND e.camera_make = ?"
+                params.append(filters['camera_make'])
+
+            if 'camera_model' in filters:
+                query += " AND e.camera_model = ?"
+                params.append(filters['camera_model'])
+
+            if 'min_iso' in filters:
+                query += " AND e.iso >= ?"
+                params.append(filters['min_iso'])
+
+            if 'max_iso' in filters:
+                query += " AND e.iso <= ?"
+                params.append(filters['max_iso'])
+
+            if 'min_aperture' in filters:
+                query += " AND e.aperture >= ?"
+                params.append(filters['min_aperture'])
+
+            if 'max_aperture' in filters:
+                query += " AND e.aperture <= ?"
+                params.append(filters['max_aperture'])
+
+            if 'focal_length' in filters:
+                query += " AND e.focal_length = ?"
+                params.append(filters['focal_length'])
+
+            query += " ORDER BY i.created_at DESC"
+
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+            return [self._row_to_dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    # ============ EMBEDDING OPERATIONS ============
+
+    def save_embedding(self, image_id: int, model_name: str, vector: bytes) -> bool:
+        """Save image embedding vector"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO image_embeddings (image_id, model_name, vector)
+                VALUES (?, ?, ?)
+            """, (image_id, model_name, vector))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving embedding: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_embedding(self, image_id: int) -> Optional[Dict]:
+        """Get embedding for an image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT image_id, model_name, vector, created_at
+                FROM image_embeddings
+                WHERE image_id = ?
+            """, (image_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def get_all_embeddings(self, model_name: Optional[str] = None) -> List[Dict]:
+        """Get all embeddings, optionally filtered by model"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            if model_name:
+                cursor.execute("""
+                    SELECT image_id, model_name, vector, created_at
+                    FROM image_embeddings
+                    WHERE model_name = ?
+                """, (model_name,))
+            else:
+                cursor.execute("""
+                    SELECT image_id, model_name, vector, created_at
+                    FROM image_embeddings
+                """)
+
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def delete_embedding(self, image_id: int) -> bool:
+        """Delete embedding for an image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("DELETE FROM image_embeddings WHERE image_id = ?", (image_id,))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error deleting embedding: {e}")
+            return False
+        finally:
+            conn.close()
+
+    # ============ COLOR OPERATIONS ============
+
+    def save_image_colors(self, image_id: int, colors: List[Dict]) -> bool:
+        """Save color palette for an image
+
+        Args:
+            image_id: Image ID
+            colors: List of dicts with keys: hex_color, percentage, is_dominant
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Delete existing colors
+            cursor.execute("DELETE FROM image_colors WHERE image_id = ?", (image_id,))
+
+            # Insert new colors
+            for color in colors:
+                cursor.execute("""
+                    INSERT INTO image_colors (image_id, hex_color, percentage, is_dominant)
+                    VALUES (?, ?, ?, ?)
+                """, (
+                    image_id,
+                    color['hex_color'],
+                    color.get('percentage'),
+                    color.get('is_dominant', False)
+                ))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving colors: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_image_colors(self, image_id: int) -> List[Dict]:
+        """Get color palette for an image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT hex_color, percentage, is_dominant
+                FROM image_colors
+                WHERE image_id = ?
+                ORDER BY percentage DESC
+            """, (image_id,))
+
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def search_images_by_color(self, hex_color: str, tolerance: int = 30) -> List[Dict]:
+        """Search images by dominant color (simple hex matching)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Simple implementation - exact match on dominant colors
+            # A more sophisticated version would calculate color distance
+            cursor.execute("""
+                SELECT DISTINCT i.* FROM images i
+                JOIN image_colors c ON i.id = c.image_id
+                WHERE c.is_dominant = 1 AND c.hex_color = ?
+                ORDER BY i.created_at DESC
+            """, (hex_color,))
+
+            rows = cursor.fetchall()
+            return [self._row_to_dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    # ============ AUDIT LOG OPERATIONS ============
+
+    def log_action(self, entity_type: str, entity_id: int, action: str,
+                   old_value: str = None, new_value: str = None,
+                   triggered_by: str = 'user') -> bool:
+        """Log an action to the audit log"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT INTO audit_log (entity_type, entity_id, action, old_value, new_value, triggered_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (entity_type, entity_id, action, old_value, new_value, triggered_by))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error logging action: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_audit_log(self, entity_type: Optional[str] = None,
+                      entity_id: Optional[int] = None,
+                      limit: int = 100) -> List[Dict]:
+        """Get audit log entries"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            query = "SELECT * FROM audit_log WHERE 1=1"
+            params = []
+
+            if entity_type:
+                query += " AND entity_type = ?"
+                params.append(entity_type)
+
+            if entity_id:
+                query += " AND entity_id = ?"
+                params.append(entity_id)
+
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
