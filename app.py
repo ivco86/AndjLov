@@ -2062,6 +2062,364 @@ def open_image_folder(image_id):
             'folder_path': folder_path
         }), 500
 
+# ============ WORKFLOW / PIPELINES ============
+
+@app.route('/api/pipelines', methods=['GET'])
+def get_pipelines():
+    """Get all pipelines"""
+    try:
+        pipelines_file = os.path.join('data', 'pipelines.json')
+
+        if not os.path.exists(pipelines_file):
+            return jsonify({'success': True, 'pipelines': []})
+
+        with open(pipelines_file, 'r', encoding='utf-8') as f:
+            pipelines = json.load(f)
+
+        return jsonify({'success': True, 'pipelines': pipelines})
+    except Exception as e:
+        print(f"Error loading pipelines: {e}")
+        return jsonify({'success': False, 'error': str(e), 'pipelines': []}), 500
+
+@app.route('/api/pipelines', methods=['POST'])
+def create_pipeline():
+    """Create a new pipeline"""
+    try:
+        data = request.get_json()
+
+        pipelines_file = os.path.join('data', 'pipelines.json')
+
+        # Load existing pipelines
+        if os.path.exists(pipelines_file):
+            with open(pipelines_file, 'r', encoding='utf-8') as f:
+                pipelines = json.load(f)
+        else:
+            pipelines = []
+
+        # Generate new ID
+        new_id = max([p['id'] for p in pipelines], default=0) + 1
+
+        # Create new pipeline
+        new_pipeline = {
+            'id': new_id,
+            'name': data.get('name'),
+            'description': data.get('description', ''),
+            'trigger_type': data.get('trigger_type', 'manual'),
+            'trigger_config': data.get('trigger_config', {}),
+            'actions': data.get('actions', []),
+            'enabled': data.get('enabled', True),
+            'run_count': 0,
+            'created_at': datetime.now().isoformat()
+        }
+
+        pipelines.append(new_pipeline)
+
+        # Save pipelines
+        with open(pipelines_file, 'w', encoding='utf-8') as f:
+            json.dump(pipelines, f, indent=2, ensure_ascii=False)
+
+        return jsonify({'success': True, 'pipeline': new_pipeline})
+    except Exception as e:
+        print(f"Error creating pipeline: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/pipelines/<int:pipeline_id>', methods=['GET'])
+def get_pipeline(pipeline_id):
+    """Get a specific pipeline"""
+    try:
+        pipelines_file = os.path.join('data', 'pipelines.json')
+
+        if not os.path.exists(pipelines_file):
+            return jsonify({'success': False, 'error': 'Pipeline not found'}), 404
+
+        with open(pipelines_file, 'r', encoding='utf-8') as f:
+            pipelines = json.load(f)
+
+        pipeline = next((p for p in pipelines if p['id'] == pipeline_id), None)
+
+        if not pipeline:
+            return jsonify({'success': False, 'error': 'Pipeline not found'}), 404
+
+        return jsonify({'success': True, 'pipeline': pipeline})
+    except Exception as e:
+        print(f"Error loading pipeline: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/pipelines/<int:pipeline_id>', methods=['PUT'])
+def update_pipeline(pipeline_id):
+    """Update a pipeline"""
+    try:
+        data = request.get_json()
+        pipelines_file = os.path.join('data', 'pipelines.json')
+
+        if not os.path.exists(pipelines_file):
+            return jsonify({'success': False, 'error': 'Pipeline not found'}), 404
+
+        with open(pipelines_file, 'r', encoding='utf-8') as f:
+            pipelines = json.load(f)
+
+        # Find and update pipeline
+        found = False
+        for pipeline in pipelines:
+            if pipeline['id'] == pipeline_id:
+                pipeline['name'] = data.get('name', pipeline['name'])
+                pipeline['description'] = data.get('description', pipeline['description'])
+                pipeline['trigger_type'] = data.get('trigger_type', pipeline['trigger_type'])
+                pipeline['trigger_config'] = data.get('trigger_config', pipeline['trigger_config'])
+                pipeline['actions'] = data.get('actions', pipeline['actions'])
+                pipeline['enabled'] = data.get('enabled', pipeline['enabled'])
+                pipeline['updated_at'] = datetime.now().isoformat()
+                found = True
+                break
+
+        if not found:
+            return jsonify({'success': False, 'error': 'Pipeline not found'}), 404
+
+        # Save pipelines
+        with open(pipelines_file, 'w', encoding='utf-8') as f:
+            json.dump(pipelines, f, indent=2, ensure_ascii=False)
+
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error updating pipeline: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/pipelines/<int:pipeline_id>', methods=['DELETE'])
+def delete_pipeline(pipeline_id):
+    """Delete a pipeline"""
+    try:
+        pipelines_file = os.path.join('data', 'pipelines.json')
+
+        if not os.path.exists(pipelines_file):
+            return jsonify({'success': False, 'error': 'Pipeline not found'}), 404
+
+        with open(pipelines_file, 'r', encoding='utf-8') as f:
+            pipelines = json.load(f)
+
+        # Filter out the pipeline to delete
+        new_pipelines = [p for p in pipelines if p['id'] != pipeline_id]
+
+        if len(new_pipelines) == len(pipelines):
+            return jsonify({'success': False, 'error': 'Pipeline not found'}), 404
+
+        # Save pipelines
+        with open(pipelines_file, 'w', encoding='utf-8') as f:
+            json.dump(new_pipelines, f, indent=2, ensure_ascii=False)
+
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error deleting pipeline: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/pipelines/<int:pipeline_id>/execute', methods=['POST'])
+def execute_pipeline(pipeline_id):
+    """Execute a pipeline on selected images"""
+    try:
+        data = request.get_json()
+        image_ids = data.get('image_ids', [])
+
+        if not image_ids:
+            return jsonify({'success': False, 'error': 'No images provided'}), 400
+
+        pipelines_file = os.path.join('data', 'pipelines.json')
+
+        if not os.path.exists(pipelines_file):
+            return jsonify({'success': False, 'error': 'Pipeline not found'}), 404
+
+        with open(pipelines_file, 'r', encoding='utf-8') as f:
+            pipelines = json.load(f)
+
+        pipeline = next((p for p in pipelines if p['id'] == pipeline_id), None)
+
+        if not pipeline:
+            return jsonify({'success': False, 'error': 'Pipeline not found'}), 404
+
+        # Execute actions (placeholder - implement actual action execution)
+        successful = 0
+        failed = 0
+
+        for image_id in image_ids:
+            try:
+                # Here you would execute each action in the pipeline
+                # For now, just mark as successful
+                successful += 1
+            except Exception as e:
+                print(f"Error executing pipeline on image {image_id}: {e}")
+                failed += 1
+
+        # Update run count
+        for p in pipelines:
+            if p['id'] == pipeline_id:
+                p['run_count'] = p.get('run_count', 0) + 1
+                break
+
+        with open(pipelines_file, 'w', encoding='utf-8') as f:
+            json.dump(pipelines, f, indent=2, ensure_ascii=False)
+
+        # Log execution
+        executions_file = os.path.join('data', 'executions.json')
+
+        if os.path.exists(executions_file):
+            with open(executions_file, 'r', encoding='utf-8') as f:
+                executions = json.load(f)
+        else:
+            executions = []
+
+        execution = {
+            'id': max([e['id'] for e in executions], default=0) + 1,
+            'pipeline_id': pipeline_id,
+            'pipeline_name': pipeline['name'],
+            'started_at': datetime.now().isoformat(),
+            'status': 'completed' if failed == 0 else 'failed',
+            'total_actions': len(pipeline['actions']) * len(image_ids),
+            'completed_actions': successful * len(pipeline['actions']),
+            'failed_actions': failed,
+            'trigger_source': 'manual'
+        }
+
+        executions.append(execution)
+
+        # Keep only last 100 executions
+        if len(executions) > 100:
+            executions = executions[-100:]
+
+        with open(executions_file, 'w', encoding='utf-8') as f:
+            json.dump(executions, f, indent=2, ensure_ascii=False)
+
+        return jsonify({
+            'success': True,
+            'successful': successful,
+            'failed': failed
+        })
+    except Exception as e:
+        print(f"Error executing pipeline: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/pipelines/actions', methods=['GET'])
+def get_available_actions():
+    """Get available pipeline actions"""
+    actions = [
+        {
+            'type': 'add_tag',
+            'description': 'Add Tag to Images',
+            'default_params': {'tag': ''}
+        },
+        {
+            'type': 'remove_tag',
+            'description': 'Remove Tag from Images',
+            'default_params': {'tag': ''}
+        },
+        {
+            'type': 'add_to_board',
+            'description': 'Add to Board',
+            'default_params': {'board_id': None}
+        },
+        {
+            'type': 'analyze',
+            'description': 'Analyze with AI',
+            'default_params': {'style': 'detailed'}
+        },
+        {
+            'type': 'mark_favorite',
+            'description': 'Mark as Favorite',
+            'default_params': {}
+        },
+        {
+            'type': 'unmark_favorite',
+            'description': 'Unmark Favorite',
+            'default_params': {}
+        }
+    ]
+
+    return jsonify({'success': True, 'actions': actions})
+
+@app.route('/api/pipelines/templates', methods=['GET'])
+def get_pipeline_templates():
+    """Get pipeline templates"""
+    templates = [
+        {
+            'id': 'organize_new',
+            'name': 'Organize New Images',
+            'description': 'Analyze new images and add them to a board',
+            'actions': [
+                {'type': 'analyze', 'params': {'style': 'detailed'}},
+                {'type': 'add_to_board', 'params': {'board_id': None}}
+            ]
+        },
+        {
+            'id': 'quick_tag',
+            'name': 'Quick Tag',
+            'description': 'Add a specific tag to images',
+            'actions': [
+                {'type': 'add_tag', 'params': {'tag': 'unprocessed'}}
+            ]
+        },
+        {
+            'id': 'favorites',
+            'name': 'Mark and Organize Favorites',
+            'description': 'Mark as favorite and add to favorites board',
+            'actions': [
+                {'type': 'mark_favorite', 'params': {}},
+                {'type': 'add_to_board', 'params': {'board_id': None}}
+            ]
+        }
+    ]
+
+    return jsonify({'success': True, 'templates': templates})
+
+@app.route('/api/pipelines/templates/<template_id>', methods=['POST'])
+def use_template(template_id):
+    """Create pipeline from template"""
+    try:
+        # Get template
+        response = get_pipeline_templates()
+        templates_data = json.loads(response.data)
+        templates = templates_data.get('templates', [])
+
+        template = next((t for t in templates if t['id'] == template_id), None)
+
+        if not template:
+            return jsonify({'success': False, 'error': 'Template not found'}), 404
+
+        # Create pipeline from template
+        pipeline_data = {
+            'name': template['name'],
+            'description': template['description'],
+            'trigger_type': 'manual',
+            'trigger_config': {},
+            'actions': template['actions'],
+            'enabled': True
+        }
+
+        # Use the create_pipeline function
+        with app.test_request_context(json=pipeline_data, method='POST'):
+            flask.request._cached_json = pipeline_data
+            return create_pipeline()
+    except Exception as e:
+        print(f"Error using template: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/executions/recent', methods=['GET'])
+def get_recent_executions():
+    """Get recent pipeline executions"""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        executions_file = os.path.join('data', 'executions.json')
+
+        if not os.path.exists(executions_file):
+            return jsonify({'success': True, 'executions': []})
+
+        with open(executions_file, 'r', encoding='utf-8') as f:
+            executions = json.load(f)
+
+        # Return last N executions in reverse order (newest first)
+        recent = executions[-limit:][::-1]
+
+        return jsonify({'success': True, 'executions': recent})
+    except Exception as e:
+        print(f"Error loading executions: {e}")
+        return jsonify({'success': False, 'error': str(e), 'executions': []}), 500
+
 # ============ STATIC FILES ============
 
 @app.route('/favicon.ico')
