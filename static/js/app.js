@@ -493,6 +493,18 @@ function showOpenWithMenu(event, imageId, mediaType) {
     document.body.appendChild(menu);
 }
 
+async function openFileLocation(imageId) {
+    try {
+        const data = await apiCall(`/images/${imageId}/open-location`, {
+            method: 'POST'
+        });
+
+        showToast(`📂 Opened location for ${data.file}`, 'success');
+    } catch (error) {
+        showToast('Failed to open file location: ' + error.message, 'error');
+    }
+}
+
 function editImage(imageId) {
     if (!state.currentImage) return;
     openEditImageModal();
@@ -1263,6 +1275,9 @@ function updateModal() {
                     </button>
                     <button class="action-btn secondary" onclick="sendImageToTelegram(${image.id})">
                         📱 Send to Telegram
+                    </button>
+                    <button class="action-btn secondary" onclick="openFileLocation(${image.id})">
+                        📂 Open Location
                     </button>
                     <button class="action-btn secondary" onclick="showOpenWithMenu(event, ${image.id}, '${image.media_type || 'image'}')">
                         🚀 Open With

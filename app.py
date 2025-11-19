@@ -485,6 +485,70 @@ def open_with_external_app(image_id):
         traceback.print_exc()
         return jsonify({'error': f'Failed to open file: {str(e)}'}), 500
 
+@app.route('/api/images/<int:image_id>/open-location', methods=['POST'])
+def open_file_location(image_id):
+    """Open the folder containing the image/video and select it"""
+    import subprocess
+    import platform
+
+    try:
+        image = db.get_image(image_id)
+        if not image:
+            return jsonify({'error': 'Image not found'}), 404
+
+        filepath = image['filepath']
+
+        # Security: Validate filepath is within PHOTOS_DIR
+        is_safe, resolved_path = is_safe_path(filepath, PHOTOS_DIR)
+
+        if not is_safe:
+            print(f"Security: Path traversal attempt blocked in open-location: {filepath}")
+            return jsonify({'error': 'Invalid file path'}), 403
+
+        if not os.path.exists(resolved_path):
+            return jsonify({'error': 'File not found on disk'}), 404
+
+        # Get absolute path
+        abs_path = os.path.abspath(resolved_path)
+        folder_path = os.path.dirname(abs_path)
+
+        # Detect OS and open folder with file selected
+        system = platform.system()
+
+        if system == 'Windows':
+            # Windows: Use explorer with /select to highlight the file
+            subprocess.Popen(['explorer', '/select,', abs_path])
+        elif system == 'Darwin':  # macOS
+            # macOS: Use open -R to reveal in Finder
+            subprocess.Popen(['open', '-R', abs_path])
+        else:  # Linux and others
+            # Linux: Open folder (cannot select specific file in most file managers)
+            # Try common file managers
+            try:
+                subprocess.Popen(['xdg-open', folder_path])
+            except FileNotFoundError:
+                # Fallback to nautilus (GNOME), dolphin (KDE), or thunar (XFCE)
+                for fm in ['nautilus', 'dolphin', 'thunar', 'pcmanfm']:
+                    try:
+                        subprocess.Popen([fm, folder_path])
+                        break
+                    except FileNotFoundError:
+                        continue
+
+        print(f"[OPEN_LOCATION] Opened folder for {image['filename']} on {system}")
+
+        return jsonify({
+            'success': True,
+            'file': image['filename'],
+            'folder': folder_path
+        })
+
+    except Exception as e:
+        print(f"Error opening file location: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to open location: {str(e)}'}), 500
+
 # ============ EXTERNAL APPS CONFIG API ============
 
 @app.route('/api/external-apps/config', methods=['GET'])
