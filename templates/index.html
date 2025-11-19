@@ -7,9 +7,6 @@
     <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
-    <!-- Dark/Light Mode Toggle -->
-    <button id="themeToggle" title="Toggle Dark/Light Mode" aria-label="Toggle theme">🌙</button>
-
     <!-- Header -->
     <header class="header">
         <div class="header-left">
@@ -51,6 +48,7 @@
                 </div>
             </div>
 
+            <button class="btn btn-secondary" id="themeToggle" title="Toggle Dark/Light Mode" aria-label="Toggle theme">🌙</button>
             <button class="btn btn-secondary" id="settingsBtn" aria-label="Open settings">⚙️ Settings</button>
         </div>
     </header>
@@ -1441,23 +1439,8 @@
         }
 
         /* Dark Mode Toggle */
-        #themeToggle {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            padding: 8px 16px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 20px;
-            transition: all 0.3s;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }
-
         #themeToggle:hover {
-            transform: scale(1.1);
+            transform: scale(1.05);
         }
 
         /* Dark Mode Variables */
