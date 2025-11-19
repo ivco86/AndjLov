@@ -509,6 +509,17 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="targetChatId">Target Chat/Group ID</label>
+                            <input
+                                type="text"
+                                id="targetChatId"
+                                placeholder="-1001234567890 or @channelname"
+                                autocomplete="off"
+                            >
+                            <small>Where to send images from the app. Get chat ID by sending /chatid to your bot, or use @username for public channels.</small>
+                        </div>
+
+                        <div class="form-group">
                             <label>
                                 <input type="checkbox" id="autoAnalyze" checked>
                                 Auto-analyze photos with AI

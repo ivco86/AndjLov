@@ -2542,6 +2542,10 @@ async function loadBotConfig() {
             document.getElementById('botToken').value = config.TELEGRAM_BOT_TOKEN;
         }
 
+        if (config.TARGET_CHAT_ID) {
+            document.getElementById('targetChatId').value = config.TARGET_CHAT_ID;
+        }
+
         if (config.AUTO_ANALYZE !== undefined) {
             document.getElementById('autoAnalyze').checked = config.AUTO_ANALYZE === 'true';
         }
@@ -2556,6 +2560,7 @@ async function loadBotConfig() {
 
 async function saveBotConfig() {
     const botToken = document.getElementById('botToken').value.trim();
+    const targetChatId = document.getElementById('targetChatId').value.trim();
     const autoAnalyze = document.getElementById('autoAnalyze').checked ? 'true' : 'false';
     const aiStyle = document.getElementById('aiStyle').value;
 
@@ -2569,6 +2574,7 @@ async function saveBotConfig() {
             method: 'POST',
             body: JSON.stringify({
                 bot_token: botToken,
+                target_chat_id: targetChatId,
                 auto_analyze: autoAnalyze,
                 ai_style: aiStyle
             })
@@ -3695,8 +3701,18 @@ setTimeout(() => {
 // ============ SEND TO TELEGRAM ============
 
 async function sendImageToTelegram(imageId) {
-    showMessage('Telegram integration: Please configure your Telegram bot in Settings first. Then you can send images via the bot commands.', 'info');
-    // Future: API endpoint for sending images directly from UI
+    try {
+        showMessage('Sending image to Telegram...', 'info');
+
+        const data = await apiCall('/telegram/send-image', {
+            method: 'POST',
+            body: JSON.stringify({ image_id: imageId })
+        });
+
+        showMessage('✅ ' + data.message, 'success');
+    } catch (error) {
+        showMessage('❌ ' + error.message, 'error');
+    }
 }
 
 // ============ DARK MODE TOGGLE ============

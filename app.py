@@ -651,6 +651,7 @@ def telegram_config():
     elif request.method == 'POST':
         data = request.json
         bot_token = data.get('bot_token', '')
+        target_chat_id = data.get('target_chat_id', '')
         auto_analyze = data.get('auto_analyze', 'true')
         ai_style = data.get('ai_style', 'classic')
 
@@ -663,6 +664,7 @@ def telegram_config():
         # Update or add configuration
         updated = {
             'TELEGRAM_BOT_TOKEN': False,
+            'TARGET_CHAT_ID': False,
             'AUTO_ANALYZE': False,
             'AI_STYLE': False
         }
@@ -671,6 +673,9 @@ def telegram_config():
             if line.startswith('TELEGRAM_BOT_TOKEN='):
                 config_lines[i] = f"TELEGRAM_BOT_TOKEN={bot_token}\n"
                 updated['TELEGRAM_BOT_TOKEN'] = True
+            elif line.startswith('TARGET_CHAT_ID='):
+                config_lines[i] = f"TARGET_CHAT_ID={target_chat_id}\n"
+                updated['TARGET_CHAT_ID'] = True
             elif line.startswith('AUTO_ANALYZE='):
                 config_lines[i] = f"AUTO_ANALYZE={auto_analyze}\n"
                 updated['AUTO_ANALYZE'] = True
@@ -681,6 +686,8 @@ def telegram_config():
         # Add missing configurations
         if not updated['TELEGRAM_BOT_TOKEN']:
             config_lines.append(f"TELEGRAM_BOT_TOKEN={bot_token}\n")
+        if not updated['TARGET_CHAT_ID']:
+            config_lines.append(f"TARGET_CHAT_ID={target_chat_id}\n")
         if not updated['AUTO_ANALYZE']:
             config_lines.append(f"AUTO_ANALYZE={auto_analyze}\n")
         if not updated['AI_STYLE']:
@@ -692,6 +699,7 @@ def telegram_config():
 
         # Update environment variables
         os.environ['TELEGRAM_BOT_TOKEN'] = bot_token
+        os.environ['TARGET_CHAT_ID'] = target_chat_id
         os.environ['AUTO_ANALYZE'] = auto_analyze
         os.environ['AI_STYLE'] = ai_style
 
@@ -699,6 +707,96 @@ def telegram_config():
             'success': True,
             'message': 'Configuration updated'
         })
+
+@app.route('/api/telegram/send-image', methods=['POST'])
+def telegram_send_image():
+    """Send image to configured Telegram chat"""
+    import requests as req
+
+    try:
+        data = request.json
+        image_id = data.get('image_id')
+
+        if not image_id:
+            return jsonify({'error': 'image_id is required'}), 400
+
+        # Get image from database
+        image = db.get_image(image_id)
+        if not image:
+            return jsonify({'error': 'Image not found'}), 404
+
+        # Get filepath
+        filepath = image['filepath']
+        is_safe, resolved_path = is_safe_path(filepath, PHOTOS_DIR)
+
+        if not is_safe:
+            print(f"Security: Path traversal attempt blocked in telegram-send: {filepath}")
+            return jsonify({'error': 'Invalid file path'}), 403
+
+        if not os.path.exists(resolved_path):
+            return jsonify({'error': 'File not found on disk'}), 404
+
+        # Get Telegram config
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+        target_chat_id = os.environ.get('TARGET_CHAT_ID', '')
+
+        if not bot_token:
+            return jsonify({'error': 'Telegram bot token not configured. Please configure in Settings.'}), 400
+
+        if not target_chat_id:
+            return jsonify({'error': 'Target chat ID not configured. Please set it in Settings → Telegram Bot → Target Chat/Group ID.'}), 400
+
+        # Prepare caption
+        caption_parts = []
+        if image.get('title') and image['title'] != image['filename']:
+            caption_parts.append(f"📷 {image['title']}")
+        else:
+            caption_parts.append(f"📷 {image['filename']}")
+
+        if image.get('description'):
+            caption_parts.append(f"\n{image['description']}")
+
+        if image.get('tags'):
+            tags_str = ' '.join([f"#{tag.replace(' ', '_')}" for tag in image['tags']])
+            caption_parts.append(f"\n\n{tags_str}")
+
+        caption = ''.join(caption_parts)
+
+        # Send photo via Telegram Bot API
+        url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+
+        with open(resolved_path, 'rb') as photo_file:
+            files = {'photo': photo_file}
+            payload = {
+                'chat_id': target_chat_id,
+                'caption': caption[:1024]  # Telegram caption limit
+            }
+
+            response = req.post(url, data=payload, files=files, timeout=30)
+
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('ok'):
+                print(f"[TELEGRAM] Sent image {image['filename']} to chat {target_chat_id}")
+                return jsonify({
+                    'success': True,
+                    'message': f'Image sent to Telegram successfully!',
+                    'telegram_message_id': result['result'].get('message_id')
+                })
+            else:
+                error_desc = result.get('description', 'Unknown error')
+                return jsonify({'error': f'Telegram API error: {error_desc}'}), 400
+        else:
+            return jsonify({'error': f'Failed to send to Telegram: HTTP {response.status_code}'}), 500
+
+    except req.RequestException as e:
+        print(f"Error sending to Telegram: {str(e)}")
+        return jsonify({'error': f'Network error: {str(e)}'}), 500
+    except Exception as e:
+        print(f"Error sending to Telegram: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to send image: {str(e)}'}), 500
 
 @app.route('/api/telegram/logs', methods=['GET'])
 def telegram_logs():
