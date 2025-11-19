@@ -2069,6 +2069,18 @@ function attachEventListeners() {
         testEmailBtn.addEventListener('click', testEmailConnection);
     }
 
+    // External apps configuration event listeners
+    const saveExternalAppsBtn = document.getElementById('saveExternalAppsBtn');
+    const resetExternalAppsBtn = document.getElementById('resetExternalAppsBtn');
+
+    if (saveExternalAppsBtn) {
+        saveExternalAppsBtn.addEventListener('click', saveExternalAppsConfig);
+    }
+
+    if (resetExternalAppsBtn) {
+        resetExternalAppsBtn.addEventListener('click', resetExternalAppsConfig);
+    }
+
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
@@ -2565,6 +2577,7 @@ function openSettingsModal() {
     loadBotStatus();
     loadBotConfig();
     loadEmailConfig();
+    loadExternalAppsConfig();
 }
 
 function closeSettingsModal() {
@@ -2656,6 +2669,118 @@ async function testEmailConnection() {
         console.error('Error testing email:', error);
         showMessage('Failed to test connection: ' + error.message, 'error');
     }
+}
+
+// ============ External Apps Configuration ============
+
+async function loadExternalAppsConfig() {
+    try {
+        const response = await fetch('/api/external-apps/config');
+        const data = await response.json();
+
+        if (data.success) {
+            renderExternalAppsList(data.config, data.custom_paths || {});
+        }
+    } catch (error) {
+        console.error('Error loading external apps config:', error);
+    }
+}
+
+function renderExternalAppsList(config, customPaths) {
+    const imageAppsList = document.getElementById('imageAppsList');
+    const videoAppsList = document.getElementById('videoAppsList');
+
+    if (!imageAppsList || !videoAppsList) return;
+
+    // Render image apps
+    imageAppsList.innerHTML = config.image.map(app => {
+        const customPath = customPaths.image?.[app.id] || '';
+        return `
+            <div class="form-group" style="margin-bottom: var(--spacing-sm);">
+                <label for="app-image-${app.id}">${app.name}</label>
+                <input
+                    type="text"
+                    id="app-image-${app.id}"
+                    data-media-type="image"
+                    data-app-id="${app.id}"
+                    class="external-app-path"
+                    placeholder="${app.command} (default)"
+                    value="${escapeHtml(customPath)}"
+                >
+                <small style="color: var(--text-secondary);">Default: ${app.command}</small>
+            </div>
+        `;
+    }).join('');
+
+    // Render video apps
+    videoAppsList.innerHTML = config.video.map(app => {
+        const customPath = customPaths.video?.[app.id] || '';
+        return `
+            <div class="form-group" style="margin-bottom: var(--spacing-sm);">
+                <label for="app-video-${app.id}">${app.name}</label>
+                <input
+                    type="text"
+                    id="app-video-${app.id}"
+                    data-media-type="video"
+                    data-app-id="${app.id}"
+                    class="external-app-path"
+                    placeholder="${app.command} (default)"
+                    value="${escapeHtml(customPath)}"
+                >
+                <small style="color: var(--text-secondary);">Default: ${app.command}</small>
+            </div>
+        `;
+    }).join('');
+}
+
+async function saveExternalAppsConfig() {
+    try {
+        const customPaths = {
+            image: {},
+            video: {}
+        };
+
+        // Collect all custom paths
+        document.querySelectorAll('.external-app-path').forEach(input => {
+            const mediaType = input.dataset.mediaType;
+            const appId = input.dataset.appId;
+            const path = input.value.trim();
+
+            if (path) {
+                customPaths[mediaType][appId] = path;
+            }
+        });
+
+        const response = await fetch('/api/external-apps/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ custom_paths: customPaths })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showMessage('✅ External app paths saved successfully!', 'success');
+            // Reload external apps in state
+            await loadInitialExternalApps();
+        } else {
+            showMessage('❌ Error saving app paths: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error saving external apps config:', error);
+        showMessage('Failed to save app paths: ' + error.message, 'error');
+    }
+}
+
+function resetExternalAppsConfig() {
+    if (!confirm('Reset all app paths to defaults?')) return;
+
+    // Clear all inputs
+    document.querySelectorAll('.external-app-path').forEach(input => {
+        input.value = '';
+    });
+
+    showMessage('App paths reset. Click "Save App Paths" to apply.', 'info');
 }
 
 // ============ Batch Selection Mode ============

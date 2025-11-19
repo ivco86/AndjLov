@@ -642,6 +642,38 @@
                         </ol>
                     </div>
                 </div>
+
+                <!-- External Apps Settings -->
+                <div class="settings-section" style="margin-top: var(--spacing-xl); padding-top: var(--spacing-xl); border-top: 1px solid var(--border-color);">
+                    <h3>🖼️ External Applications</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: var(--spacing-md);">
+                        Configure full paths to external applications for opening images and videos.
+                        Leave empty to use default commands (e.g., "photoshop" from PATH).
+                    </p>
+
+                    <div id="externalAppsConfig">
+                        <h4 style="margin-top: var(--spacing-md); margin-bottom: var(--spacing-sm);">📷 Image Applications</h4>
+                        <div id="imageAppsList"></div>
+
+                        <h4 style="margin-top: var(--spacing-lg); margin-bottom: var(--spacing-sm);">🎬 Video Applications</h4>
+                        <div id="videoAppsList"></div>
+                    </div>
+
+                    <div class="form-actions" style="margin-top: var(--spacing-md);">
+                        <button type="button" class="btn btn-primary" id="saveExternalAppsBtn">💾 Save App Paths</button>
+                        <button type="button" class="btn btn-secondary" id="resetExternalAppsBtn">🔄 Reset to Defaults</button>
+                    </div>
+
+                    <div class="help-text" style="margin-top: var(--spacing-md);">
+                        <p><strong>Examples:</strong></p>
+                        <ul>
+                            <li><strong>Windows:</strong> <code>C:\Program Files\Adobe\Adobe Photoshop 2024\Photoshop.exe</code></li>
+                            <li><strong>Mac:</strong> <code>/Applications/Adobe Photoshop 2024/Photoshop.app</code></li>
+                            <li><strong>Linux:</strong> <code>/usr/bin/gimp</code></li>
+                        </ul>
+                        <p><strong>Tip:</strong> You can find the full path by right-clicking the app shortcut → Properties (Windows) or using "which" command (Linux/Mac).</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

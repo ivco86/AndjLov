@@ -451,10 +451,17 @@ def open_with_external_app(image_id):
         if not app:
             return jsonify({'error': f'Application {app_id} not found for {media_type}'}), 404
 
-        # Launch application in background
-        command = [app['command'], resolved_path]
+        # Check for custom path
+        custom_paths_json = db.get_setting('external_app_paths')
+        custom_paths = json.loads(custom_paths_json) if custom_paths_json else {}
 
-        print(f"[OPEN_WITH] Opening {resolved_path} with {app['name']} ({app['command']})")
+        # Use custom path if configured, otherwise use default command
+        app_command = custom_paths.get(media_type, {}).get(app_id, app['command'])
+
+        # Launch application in background
+        command = [app_command, resolved_path]
+
+        print(f"[OPEN_WITH] Opening {resolved_path} with {app['name']} ({app_command})")
 
         # Start process in background (detached)
         subprocess.Popen(
@@ -477,6 +484,63 @@ def open_with_external_app(image_id):
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Failed to open file: {str(e)}'}), 500
+
+# ============ EXTERNAL APPS CONFIG API ============
+
+@app.route('/api/external-apps/config', methods=['GET'])
+def get_external_apps_config():
+    """Get external apps configuration with custom paths"""
+    try:
+        # Get custom paths from settings
+        custom_paths_json = db.get_setting('external_app_paths')
+        custom_paths = json.loads(custom_paths_json) if custom_paths_json else {}
+
+        # Merge with default apps and add custom paths
+        config = {
+            'image': [],
+            'video': []
+        }
+
+        for media_type in ['image', 'video']:
+            for app in EXTERNAL_APPS.get(media_type, []):
+                app_config = app.copy()
+                # Add custom path if configured
+                custom_path = custom_paths.get(media_type, {}).get(app['id'])
+                if custom_path:
+                    app_config['custom_path'] = custom_path
+                config[media_type].append(app_config)
+
+        return jsonify({
+            'success': True,
+            'config': config,
+            'custom_paths': custom_paths
+        })
+    except Exception as e:
+        print(f"Error getting external apps config: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/external-apps/config', methods=['POST'])
+def save_external_apps_config():
+    """Save custom paths for external apps"""
+    try:
+        data = request.get_json() or {}
+        custom_paths = data.get('custom_paths', {})
+
+        # Validate structure
+        for media_type in custom_paths:
+            if media_type not in ['image', 'video']:
+                return jsonify({'error': f'Invalid media type: {media_type}'}), 400
+
+        # Save to database
+        db.set_setting('external_app_paths', json.dumps(custom_paths))
+
+        return jsonify({
+            'success': True,
+            'message': 'External app paths saved successfully'
+        })
+    except Exception as e:
+        print(f"Error saving external apps config: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 # ============ TELEGRAM BOT API ============
 
