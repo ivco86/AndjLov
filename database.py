@@ -92,7 +92,80 @@ class Database:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_boards_parent ON boards(parent_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_board_images_board ON board_images(board_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_board_images_image ON board_images(image_id)")
-        
+
+        # ============ AI FEATURES TABLES ============
+
+        # EXIF metadata table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS exif_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                image_id INTEGER UNIQUE NOT NULL,
+                camera_make TEXT,
+                camera_model TEXT,
+                lens_model TEXT,
+                iso INTEGER,
+                aperture REAL,
+                shutter_speed REAL,
+                focal_length REAL,
+                flash INTEGER,
+                white_balance INTEGER,
+                metering_mode INTEGER,
+                exposure_mode INTEGER,
+                exposure_compensation REAL,
+                orientation INTEGER,
+                date_taken TEXT,
+                gps_latitude REAL,
+                gps_longitude REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            )
+        """)
+
+        # CLIP embeddings table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS image_embeddings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                image_id INTEGER UNIQUE NOT NULL,
+                embedding BLOB NOT NULL,
+                model_version TEXT DEFAULT 'clip-vit-base-patch32',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Color palette table (for future color search features)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS image_colors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                image_id INTEGER UNIQUE NOT NULL,
+                dominant_colors TEXT,
+                color_palette TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Audit log table (for tracking changes)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                changes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create indexes for AI features
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_exif_image ON exif_data(image_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_exif_camera ON exif_data(camera_make, camera_model)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_exif_iso ON exif_data(iso)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_exif_date ON exif_data(date_taken)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_exif_gps ON exif_data(gps_latitude, gps_longitude)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_image ON image_embeddings(image_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_colors_image ON image_colors(image_id)")
+
         # Full-text search index - check if needs migration
         cursor.execute("""
             SELECT sql FROM sqlite_master 
@@ -942,9 +1015,9 @@ class Database:
         """Convert SQLite Row to dictionary"""
         if row is None:
             return None
-        
+
         data = dict(row)
-        
+
         # Parse JSON fields
         if 'tags' in data and data['tags']:
             try:
@@ -953,9 +1026,234 @@ class Database:
                 data['tags'] = []
         else:
             data['tags'] = []
-        
+
         # Convert boolean
         if 'is_favorite' in data:
             data['is_favorite'] = bool(data['is_favorite'])
-        
+
         return data
+
+    # ============ EXIF OPERATIONS ============
+
+    def save_exif_data(self, image_id: int, exif_data: Dict) -> bool:
+        """Save EXIF metadata for an image"""
+        if not exif_data:
+            return False
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO exif_data (
+                    image_id, camera_make, camera_model, lens_model,
+                    iso, aperture, shutter_speed, focal_length,
+                    flash, white_balance, metering_mode, exposure_mode,
+                    exposure_compensation, orientation, date_taken,
+                    gps_latitude, gps_longitude
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                image_id,
+                exif_data.get('camera_make'),
+                exif_data.get('camera_model'),
+                exif_data.get('lens_model'),
+                exif_data.get('iso'),
+                exif_data.get('aperture'),
+                exif_data.get('shutter_speed'),
+                exif_data.get('focal_length'),
+                exif_data.get('flash'),
+                exif_data.get('white_balance'),
+                exif_data.get('metering_mode'),
+                exif_data.get('exposure_mode'),
+                exif_data.get('exposure_compensation'),
+                exif_data.get('orientation'),
+                exif_data.get('date_taken'),
+                exif_data.get('gps_latitude'),
+                exif_data.get('gps_longitude')
+            ))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving EXIF data: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_exif_data(self, image_id: int) -> Optional[Dict]:
+        """Get EXIF metadata for an image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM exif_data WHERE image_id = ?", (image_id,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return dict(result)
+        return None
+
+    def search_by_exif(self, camera_make: str = None, camera_model: str = None,
+                       min_iso: int = None, max_iso: int = None,
+                       min_aperture: float = None, max_aperture: float = None,
+                       min_focal_length: float = None, max_focal_length: float = None,
+                       has_gps: bool = None, limit: int = 100) -> List[Dict]:
+        """Search images by EXIF criteria"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT i.* FROM images i
+            JOIN exif_data e ON i.id = e.image_id
+            WHERE 1=1
+        """
+        params = []
+
+        if camera_make:
+            query += " AND e.camera_make LIKE ?"
+            params.append(f"%{camera_make}%")
+
+        if camera_model:
+            query += " AND e.camera_model LIKE ?"
+            params.append(f"%{camera_model}%")
+
+        if min_iso is not None:
+            query += " AND e.iso >= ?"
+            params.append(min_iso)
+
+        if max_iso is not None:
+            query += " AND e.iso <= ?"
+            params.append(max_iso)
+
+        if min_aperture is not None:
+            query += " AND e.aperture >= ?"
+            params.append(min_aperture)
+
+        if max_aperture is not None:
+            query += " AND e.aperture <= ?"
+            params.append(max_aperture)
+
+        if min_focal_length is not None:
+            query += " AND e.focal_length >= ?"
+            params.append(min_focal_length)
+
+        if max_focal_length is not None:
+            query += " AND e.focal_length <= ?"
+            params.append(max_focal_length)
+
+        if has_gps is not None:
+            if has_gps:
+                query += " AND e.gps_latitude IS NOT NULL AND e.gps_longitude IS NOT NULL"
+            else:
+                query += " AND (e.gps_latitude IS NULL OR e.gps_longitude IS NULL)"
+
+        query += " ORDER BY i.created_at DESC LIMIT ?"
+        params.append(limit)
+
+        cursor.execute(query, params)
+        results = cursor.fetchall()
+        conn.close()
+
+        return [self._row_to_dict(row) for row in results]
+
+    def get_all_cameras(self) -> List[Dict]:
+        """Get list of all cameras with image counts"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                camera_make,
+                camera_model,
+                COUNT(*) as count
+            FROM exif_data
+            WHERE camera_make != '' OR camera_model != ''
+            GROUP BY camera_make, camera_model
+            ORDER BY count DESC
+        """)
+
+        results = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in results]
+
+    # ============ EMBEDDINGS OPERATIONS ============
+
+    def save_embedding(self, image_id: int, embedding: bytes, model_version: str = 'clip-vit-base-patch32') -> bool:
+        """Save CLIP embedding for an image"""
+        if not embedding:
+            return False
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO image_embeddings (image_id, embedding, model_version)
+                VALUES (?, ?, ?)
+            """, (image_id, embedding, model_version))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving embedding: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_embedding(self, image_id: int) -> Optional[bytes]:
+        """Get CLIP embedding for an image"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT embedding FROM image_embeddings WHERE image_id = ?", (image_id,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return result['embedding']
+        return None
+
+    def get_all_embeddings(self, limit: int = None) -> List[Dict]:
+        """Get all image embeddings"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        query = "SELECT image_id as id, embedding FROM image_embeddings"
+        if limit:
+            query += f" LIMIT {limit}"
+
+        cursor.execute(query)
+        results = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in results]
+
+    def count_embeddings(self) -> int:
+        """Count images with embeddings"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) as count FROM image_embeddings")
+        result = cursor.fetchone()
+        conn.close()
+
+        return result['count'] if result else 0
+
+    def get_images_without_embeddings(self, limit: int = 100) -> List[Dict]:
+        """Get images that don't have embeddings yet"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT i.* FROM images i
+            LEFT JOIN image_embeddings e ON i.id = e.image_id
+            WHERE e.id IS NULL AND i.media_type = 'image'
+            ORDER BY i.created_at DESC
+            LIMIT ?
+        """, (limit,))
+
+        results = cursor.fetchall()
+        conn.close()
+
+        return [self._row_to_dict(row) for row in results]
